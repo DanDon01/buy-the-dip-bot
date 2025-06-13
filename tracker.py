@@ -1,99 +1,168 @@
 import pandas as pd
 from datetime import datetime, timedelta
 import os
-from utils import get_stock_data, calculate_score, save_to_json, load_from_json
+import json
+from utils import calculate_rsi
+from data_collector import DataCollector
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from utils import ensure_cache_dir
 
 class StockTracker:
     def __init__(self):
         self.output_dir = "output"
-        self.watchlist_file = "daily_watchlist.json"
-        self.alerts_file = "alerts_log.csv"
-        self.tickers_file = "tickers.csv"
+        self.watchlist_file = os.path.join(self.output_dir, "watchlist.json")
+        self.alerts_file = os.path.join(self.output_dir, "alerts.json")
+        self.cache_dir = "cache"
+        ensure_cache_dir()
         
-        # Create output directory if it doesn't exist
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+        # Initialize data collector
+        self.collector = DataCollector()
+        
+        # Load or initialize watchlist and alerts
+        self.watchlist = self._load_json(self.watchlist_file, {'tickers': [], 'last_updated': None})
+        self.alerts = self._load_json(self.alerts_file, {'alerts': [], 'last_updated': None})
     
-    def load_tickers(self):
-        """Load tickers from CSV file."""
+    def _load_json(self, filepath, default=None):
+        """Load JSON file or return default if not exists."""
         try:
-            return pd.read_csv(self.tickers_file)['ticker'].tolist()
+            with open(filepath, 'r') as f:
+                return json.load(f)
         except FileNotFoundError:
-            print(f"Warning: {self.tickers_file} not found. Using default S&P 500 tickers.")
-            # You would typically fetch S&P 500 tickers here
-            return ['AAPL', 'MSFT', 'GOOGL']  # Placeholder
+            if default is not None:
+                with open(filepath, 'w') as f:
+                    json.dump(default, f, indent=4)
+                return default
+            return None
+    
+    def _save_json(self, filepath, data):
+        """Save data to JSON file."""
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=4)
+    
+    def _load_data(self):
+        """Load current market data and scores."""
+        try:
+            # Update data if needed
+            self.collector.update_data()
+            
+            # Load current scores
+            with open(os.path.join(self.cache_dir, "daily_scores.json"), 'r') as f:
+                scores_data = json.load(f)
+            
+            # Load market data
+            with open(os.path.join(self.cache_dir, "stock_data.json"), 'r') as f:
+                market_data = json.load(f)
+            
+            return scores_data, market_data
+            
+        except FileNotFoundError as e:
+            print(f"Error: Required data files not found. Please run data collection first.")
+            print(f"Missing file: {str(e)}")
+            return None, None
     
     def scan_stocks(self):
-        """Main scanning function."""
-        tickers = self.load_tickers()
-        results = []
+        """Scan stocks for buying opportunities using cached data."""
+        print("\nStarting stock scan...")
         
-        for ticker in tickers:
-            stock_data = get_stock_data(ticker)
-            if stock_data is not None:
-                score = calculate_score(stock_data)
-                current_price = stock_data['Close'].iloc[-1]
-                
-                results.append({
+        # Load current data
+        scores_data, market_data = self._load_data()
+        if not scores_data or not market_data:
+            return pd.DataFrame()
+        
+        # Convert scores to DataFrame
+        scores = []
+        for ticker, data in scores_data['scores'].items():
+            if data['score'] >= 50:  # Only include stocks with score >= 50
+                scores.append({
                     'ticker': ticker,
-                    'price': current_price,
-                    'score': score,
-                    'date': datetime.now().strftime('%Y-%m-%d')
+                    'price': data['price'],
+                    'score': data['score'],
+                    'score_details': data['score_details'],
+                    'timestamp': data['timestamp']
                 })
-                
-                # Check for "Perfect Buy" conditions
-                if score >= 50:  # Example threshold
-                    self.log_alert(ticker, score, current_price)
         
-        return pd.DataFrame(results)
+        if not scores:
+            print("\nNo stocks currently meet the buying criteria.")
+            return pd.DataFrame()
+        
+        # Convert to DataFrame and sort by score
+        df = pd.DataFrame(scores)
+        df = df.sort_values('score', ascending=False)
+        
+        # Save results
+        timestamp = datetime.now().strftime('%Y%m%d')
+        output_file = os.path.join(self.output_dir, f"scan_{timestamp}.csv")
+        df.to_csv(output_file, index=False)
+        
+        # Update watchlist with new opportunities
+        self._update_watchlist(df)
+        
+        # Print results
+        print(f"\nFound {len(df)} potential buying opportunities!")
+        print("\nTop 5 stocks by score:")
+        for _, row in df.head().iterrows():
+            print(f"\n{row['ticker']} (Score: {row['score']})")
+            print(f"Current Price: ${row['price']:.2f}")
+            print("Score Breakdown:")
+            for metric, details in row['score_details'].items():
+                print(f"  {metric.replace('_', ' ').title()}: {details['points']}/{details['max_points']} points")
+                print(f"    Value: {details['value']} (Threshold: {details['threshold']})")
+        
+        print(f"\nFull results saved to: {output_file}")
+        return df
     
-    def update_watchlist(self, new_results):
-        """Update the 7-day watchlist."""
-        watchlist = load_from_json(self.watchlist_file)
-        today = datetime.now().strftime('%Y-%m-%d')
+    def _update_watchlist(self, opportunities_df):
+        """Update watchlist with new opportunities."""
+        current_time = datetime.now().isoformat()
         
-        # Add new results
-        watchlist[today] = new_results.to_dict('records')
-        
-        # Remove entries older than 7 days
-        cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-        watchlist = {k: v for k, v in watchlist.items() if k > cutoff_date}
-        
-        save_to_json(watchlist, self.watchlist_file)
-    
-    def log_alert(self, ticker, score, price):
-        """Log "Perfect Buy" alerts."""
-        alert = {
-            'ticker': ticker,
-            'score': score,
-            'price': price,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-        
-        df = pd.DataFrame([alert])
-        if os.path.exists(self.alerts_file):
-            df.to_csv(self.alerts_file, mode='a', header=False, index=False)
-        else:
-            df.to_csv(self.alerts_file, index=False)
-    
-    def run(self):
-        """Main execution function."""
-        print(f"Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Scan stocks
-        results = self.scan_stocks()
-        
-        # Save daily results
-        output_file = os.path.join(self.output_dir, f"scan_{datetime.now().strftime('%Y%m%d')}.csv")
-        results.to_csv(output_file, index=False)
+        # Convert opportunities to watchlist format
+        new_opportunities = []
+        for _, row in opportunities_df.iterrows():
+            opportunity = {
+                'ticker': row['ticker'],
+                'price': row['price'],
+                'score': row['score'],
+                'score_details': row['score_details'],
+                'first_seen': current_time,
+                'last_updated': current_time,
+                'status': 'active'
+            }
+            new_opportunities.append(opportunity)
         
         # Update watchlist
-        self.update_watchlist(results)
+        self.watchlist['tickers'].extend(new_opportunities)
+        self.watchlist['last_updated'] = current_time
         
-        print(f"Scan complete. Results saved to {output_file}")
-        print(f"Top 5 stocks by score:")
-        print(results.nlargest(5, 'score')[['ticker', 'score', 'price']])
+        # Save updated watchlist
+        self._save_json(self.watchlist_file, self.watchlist)
+        
+        # Create alerts for new opportunities
+        self._create_alerts(new_opportunities)
+    
+    def _create_alerts(self, new_opportunities):
+        """Create alerts for new opportunities."""
+        current_time = datetime.now().isoformat()
+        
+        # Create alerts for each new opportunity
+        for opp in new_opportunities:
+            alert = {
+                'ticker': opp['ticker'],
+                'price': opp['price'],
+                'score': opp['score'],
+                'score_details': opp['score_details'],
+                'timestamp': current_time,
+                'type': 'new_opportunity',
+                'message': f"New buying opportunity: {opp['ticker']} (Score: {opp['score']})"
+            }
+            self.alerts['alerts'].append(alert)
+        
+        # Update alerts timestamp
+        self.alerts['last_updated'] = current_time
+        
+        # Save updated alerts
+        self._save_json(self.alerts_file, self.alerts)
 
 if __name__ == "__main__":
     tracker = StockTracker()
-    tracker.run() 
+    tracker.scan_stocks() 
