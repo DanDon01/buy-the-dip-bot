@@ -31,6 +31,7 @@ logging.getLogger('urllib3').propagate = False
 
 # Cache configuration
 CACHE_DIR = "cache"
+OUTPUT_DIR = "output"
 STOCK_INFO_CACHE = os.path.join(CACHE_DIR, "stock_info_cache.json")
 CACHE_EXPIRY = timedelta(days=1)  # Cache expires after 1 day
 
@@ -40,6 +41,11 @@ def ensure_cache_dir():
     """Ensure cache directory exists."""
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR)
+
+def ensure_output_dir():
+    """Ensure output directory exists."""
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
 
 def get_cache_key(ticker, data_type):
     """Generate a cache key for a ticker and data type."""
