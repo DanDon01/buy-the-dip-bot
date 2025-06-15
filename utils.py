@@ -142,63 +142,120 @@ def get_stock_data(ticker, period="1wk"):
     except Exception:
         return None
 
-def calculate_score(stock_data):
-    """Calculate a custom score based on various metrics."""
+def calculate_score(stock_data, market_cap):
+    """Calculate a custom score based on various metrics.
+
+    Parameters
+    ----------
+    stock_data : pandas.DataFrame
+        DataFrame with ``Close`` and ``Volume`` columns.
+    market_cap : float
+        Market capitalisation of the company. Used to slightly
+        favour larger, more liquid stocks.
+    """
     if stock_data is None or len(stock_data) < 3:
         return 0, {}
     
     try:
         # Calculate basic metrics
         current_price = stock_data['Close'].iloc[-1]
-        high_5d = stock_data['Close'].max()
+        high_5d = stock_data['Close'].tail(5).max()
         drop_from_high = ((high_5d - current_price) / high_5d) * 100
-        
-        # Calculate RSI on a smaller window
+
+        # RSI on a 5 day window to gauge short term momentum
         rsi = calculate_rsi(stock_data['Close'], period=5).iloc[-1]
-        
-        # Calculate volume metrics
+
+        # Volume compared to average
         avg_volume = stock_data['Volume'].mean()
         last_volume = stock_data['Volume'].iloc[-1]
         volume_ratio = (last_volume / avg_volume) * 100
-        
+
+        # Consecutive down days in last 3 sessions
+        downs = (stock_data['Close'].diff() < 0).tail(3).sum()
+
         # Initialize scoring components
         score = 0
         score_details = {
             'price_drop': {
                 'value': f"{drop_from_high:.1f}%",
                 'points': 0,
-                'threshold': ">5%",
-                'max_points': 30
+                'threshold': '>5%',
+                'max_points': 40,
             },
             'rsi': {
                 'value': f"{rsi:.1f}",
                 'points': 0,
-                'threshold': "25-35",
-                'max_points': 30
+                'threshold': '<40',
+                'max_points': 30,
             },
             'volume': {
                 'value': f"{volume_ratio:.1f}% of avg",
                 'points': 0,
-                'threshold': ">150%",
-                'max_points': 20
-            }
+                'threshold': '>150%',
+                'max_points': 20,
+            },
+            'streak': {
+                'value': int(downs),
+                'points': 0,
+                'threshold': '>=3 down days',
+                'max_points': 10,
+            },
+            'market_cap': {
+                'value': f"${market_cap/1e9:.1f}B",
+                'points': 0,
+                'threshold': '>=2B',
+                'max_points': 10,
+            },
         }
-        
-        # Score price drop
-        if drop_from_high > 5:
-            score += 30
-            score_details['price_drop']['points'] = 30
-        
-        # Score RSI
-        if 25 <= rsi <= 35:
-            score += 30
-            score_details['rsi']['points'] = 30
-        
-        # Score volume
-        if last_volume > avg_volume * 1.5:
-            score += 20
-            score_details['volume']['points'] = 20
-        
+
+        # Price drop scoring
+        if drop_from_high >= 10:
+            pd_points = 40
+        elif drop_from_high >= 5:
+            pd_points = 20
+        else:
+            pd_points = 0
+        score += pd_points
+        score_details['price_drop']['points'] = pd_points
+
+        # RSI scoring
+        if rsi <= 30:
+            rsi_points = 30
+        elif rsi <= 40:
+            rsi_points = 15
+        else:
+            rsi_points = 0
+        score += rsi_points
+        score_details['rsi']['points'] = rsi_points
+
+        # Volume scoring
+        if volume_ratio >= 200:
+            vol_points = 20
+        elif volume_ratio >= 150:
+            vol_points = 10
+        else:
+            vol_points = 0
+        score += vol_points
+        score_details['volume']['points'] = vol_points
+
+        # Down streak scoring
+        if downs >= 3:
+            streak_points = 10
+        else:
+            streak_points = 0
+        score += streak_points
+        score_details['streak']['points'] = streak_points
+
+        # Market cap scoring (favour established companies)
+        if market_cap >= 1e10:
+            cap_points = 10
+        elif market_cap >= 2e9:
+            cap_points = 5
+        else:
+            cap_points = 0
+        score += cap_points
+        score_details['market_cap']['points'] = cap_points
+
         return score, score_details
     except Exception as e:
         print(f"Error calculating score: {str(e)}")
