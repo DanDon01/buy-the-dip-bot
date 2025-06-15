@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import yfinance as yf
+from yahooquery import Ticker
 from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
@@ -33,6 +33,8 @@ logging.getLogger('urllib3').propagate = False
 CACHE_DIR = "cache"
 STOCK_INFO_CACHE = os.path.join(CACHE_DIR, "stock_info_cache.json")
 CACHE_EXPIRY = timedelta(days=1)  # Cache expires after 1 day
+
+VALIDATED_FILE = os.path.join(CACHE_DIR, "validated_tickers.json")
 
 def ensure_cache_dir():
     """Ensure cache directory exists."""
@@ -114,11 +116,17 @@ def get_stock_data(ticker, period="1wk"):
     
     # If not in cache or expired, fetch from API
     try:
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period=period, interval='1d')[['Close', 'Volume']]
-        
-        if len(hist) < 3:
+        stock = Ticker(ticker)
+        hist = stock.history(period=period, interval='1d')
+        if hist is None or hist.empty:
             return None
+        # yahooquery returns a MultiIndex (symbol, date). Drop the symbol level for single ticker
+        if isinstance(hist.index, pd.MultiIndex):
+            hist = hist.xs(ticker, level=0, drop_level=True)
+        # Standardise column capitalisation so downstream code stays unchanged (Close / Volume)
+        hist.rename(columns=lambda c: c.title(), inplace=True)
+        # Ensure required columns exist
+        hist = hist[['Close', 'Volume']]
         
         # Update cache
         _stock_info_cache[cache_key] = {
@@ -248,10 +256,15 @@ def get_nasdaq_tickers():
 def validate_ticker(ticker):
     """Validate if a ticker is active and has data."""
     try:
-        stock = yf.Ticker(ticker)
+        stock = Ticker(ticker)
         # Only fetch 1 day of data for validation
-        hist = stock.history(period='1d', interval='1d')[['Close']]
-        return len(hist) > 0
+        hist = stock.history(period='1d', interval='1d')
+        if hist is None or hist.empty:
+            return False
+        if isinstance(hist.index, pd.MultiIndex):
+            hist = hist.xs(ticker, level=0, drop_level=True)
+        hist.rename(columns=lambda c: c.title(), inplace=True)
+        return len(hist[['Close']]) > 0
     except Exception:
         return False
 
@@ -305,13 +318,17 @@ def get_stock_info(ticker):
     # If not in cache or expired, fetch from API
     try:
         with suppress_output():
-            stock = yf.Ticker(ticker)
-            info = stock.info
+            stock = Ticker(ticker)
+            # yahooquery exposes multiple info dicts, merge the essentials
+            summary = stock.summary_detail.get(ticker, {})
+            price   = stock.price.get(ticker, {})
+            info    = {**summary, **price}
+
             data = {
                 'ticker': ticker,
                 'market_cap': info.get('marketCap', 0),
-                'volume': info.get('averageVolume', 0),
-                'exchange': info.get('exchange', ''),
+                'volume': info.get('averageVolume', info.get('averageDailyVolume10Day', 0)),
+                'exchange': info.get('exchange', info.get('exchangeName', '')),
                 'sector': info.get('sector', ''),
                 'industry': info.get('industry', '')
             }
@@ -444,4 +461,53 @@ def load_tickers():
         return update_tickers_file()['tickers']
     except Exception as e:
         print(f"Error loading tickers: {str(e)}")
-        return [] 
+        return []
+
+def _collect_candidate_tickers():
+    """Return raw unique tickers from S&P-500 and Nasdaq helpers."""
+    return sorted(set(get_sp500_tickers() + get_nasdaq_tickers()))
+
+def _rebuild_validated_cache(batch_size: int = 100):
+    """Validate raw tickers, save JSON cache, and return the valid list."""
+    print("Validating ticker universe – this runs only when cache is missing or stale...")
+    raw = _collect_candidate_tickers()
+    valid, invalid = validate_ticker_batch(raw, batch_size=batch_size)
+
+    data = {
+        "generated": datetime.now().isoformat(),
+        "total_raw": len(raw),
+        "total_valid": len(valid),
+        "total_invalid": invalid,
+        "tickers": valid,
+    }
+
+    with open(VALIDATED_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+    return valid
+
+def load_valid_tickers(max_age_days: int = 1):
+    """Return cached validated tickers, refreshing if older than *max_age_days*."""
+    ensure_cache_dir()
+    try:
+        if os.path.exists(VALIDATED_FILE):
+            with open(VALIDATED_FILE, "r") as f:
+                data = json.load(f)
+            gen_str = data.get("generated")
+            if gen_str:
+                try:
+                    generated = datetime.fromisoformat(gen_str)
+                    if datetime.now() - generated < timedelta(days=max_age_days):
+                        return data["tickers"]
+                except ValueError:
+                    # malformed date, treat as fresh for now
+                    return data["tickers"]
+            else:
+                # No timestamp – assume file is newly generated and accept
+                return data["tickers"]
+    except Exception:
+        # Fall through to rebuild if file corrupt / unreadable
+        pass
+
+    # Need to rebuild
+    return _rebuild_validated_cache() 

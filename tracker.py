@@ -7,6 +7,7 @@ from data_collector import DataCollector
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from utils import ensure_cache_dir
+from yahooquery import Ticker
 
 class StockTracker:
     def __init__(self):
@@ -163,6 +164,53 @@ class StockTracker:
         # Save updated alerts
         self._save_json(self.alerts_file, self.alerts)
 
+    def _save_by_exchange(self, data, out_dir="cache/exchanges"):
+        os.makedirs(out_dir, exist_ok=True)
+
+        groups = {}
+        for t, d in data.items():
+            ex = d.get("exchange", "UNK")
+            groups.setdefault(ex, {})[t] = d
+
+        for ex, tickers in groups.items():
+            path = os.path.join(out_dir, f"{ex}.json")
+            with open(path, "w") as f:
+                json.dump(tickers, f, indent=4)
+
+    def filter_tickers(self, data):
+        # Implementation of filter_tickers method (placeholder)
+        pass
+
+    def _fetch_history(self, ticker):
+        try:
+            hist = Ticker(ticker, timeout=8).history(period="1mo", interval="1d")
+            ...
+        except Exception:
+            return None
+
+def fetch_price_bulk(symbols):
+    t = Ticker(" ".join(symbols), asynchronous=False, progress=False)
+    return t.price  # dict keyed by symbol
+
 if __name__ == "__main__":
     tracker = StockTracker()
     tracker.scan_stocks() 
+
+    BULK = 200
+    for batch in chunks(remaining_tickers, BULK):
+        price_map = fetch_price_bulk(batch)
+        # loop over batch, read history only for the symbols
+        # that passed the price check
+        for symbol, info in survivors:
+            print(f"    [{symbol}] fetching history…", end="", flush=True)
+            hist = self._fetch_history(symbol)
+            if hist is None or hist.empty:
+                self._mark_bad(symbol)
+                print(f"✗ {symbol}: no history")
+                time.sleep(HISTORY_RATE_LIMIT)
+                continue
+            record = self._assemble_record(symbol, info, hist)
+            all_stock_data[symbol] = record
+            print(" done")
+            time.sleep(HISTORY_RATE_LIMIT)
+        time.sleep(10)        # cool-down between bulks 
