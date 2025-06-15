@@ -6,7 +6,7 @@ from utils import (
     get_sp500_tickers,
     get_nasdaq_tickers,
     ensure_cache_dir,
-    calculate_rsi,
+    calculate_score,
     load_valid_tickers,
 )
 import time
@@ -377,69 +377,13 @@ class DataCollector:
         return scores
     
     def calculate_score(self, data):
-        """Calculate score for a single ticker."""
+        """Calculate score for a single ticker using utils.calculate_score."""
         try:
-            # Convert historical data to DataFrame
             df = pd.DataFrame({
-                'Close': data['historical_data']['close'],
-                'Volume': data['historical_data']['volume'],
-                'High': data['historical_data']['high'],
-                'Low': data['historical_data']['low']
-            }, index=pd.to_datetime(data['historical_data']['dates']))
-            
-            # Calculate metrics
-            current_price = df['Close'].iloc[-1]
-            high_5d = df['High'].max()
-            drop_from_high = ((high_5d - current_price) / high_5d) * 100
-            
-            # Calculate RSI
-            rsi = calculate_rsi(df['Close'], period=5).iloc[-1]
-            
-            # Calculate volume metrics
-            avg_volume = df['Volume'].mean()
-            last_volume = df['Volume'].iloc[-1]
-            volume_ratio = (last_volume / avg_volume) * 100
-            
-            # Initialize scoring components
-            score = 0
-            score_details = {
-                'price_drop': {
-                    'value': f"{drop_from_high:.1f}%",
-                    'points': 0,
-                    'threshold': ">5%",
-                    'max_points': 30
-                },
-                'rsi': {
-                    'value': f"{rsi:.1f}",
-                    'points': 0,
-                    'threshold': "25-35",
-                    'max_points': 30
-                },
-                'volume': {
-                    'value': f"{volume_ratio:.1f}% of avg",
-                    'points': 0,
-                    'threshold': ">150%",
-                    'max_points': 20
-                }
-            }
-            
-            # Score price drop
-            if drop_from_high > 5:
-                score += 30
-                score_details['price_drop']['points'] = 30
-            
-            # Score RSI
-            if 25 <= rsi <= 35:
-                score += 30
-                score_details['rsi']['points'] = 30
-            
-            # Score volume
-            if last_volume > avg_volume * 1.5:
-                score += 20
-                score_details['volume']['points'] = 20
-            
-            return score, score_details
-            
+                "Close": data["historical_data"]["close"],
+                "Volume": data["historical_data"]["volume"],
+            })
+            return calculate_score(df, data.get("market_cap", 0))
         except Exception as e:
             print(f"Error calculating score: {str(e)}")
             return 0, {}
