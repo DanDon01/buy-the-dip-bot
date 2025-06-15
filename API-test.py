@@ -6,3 +6,4 @@ print("Price:", price)
 
 hist = ticker.history(period="5d")
 print(hist.tail())
+

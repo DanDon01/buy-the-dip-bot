@@ -2,20 +2,26 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import json
-from utils import calculate_rsi
+from utils import (
+    calculate_rsi,
+    ensure_cache_dir,
+    ensure_output_dir,
+    CACHE_DIR,
+    OUTPUT_DIR,
+)
 from data_collector import DataCollector
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from utils import ensure_cache_dir
 from yahooquery import Ticker
 
 class StockTracker:
     def __init__(self):
-        self.output_dir = "output"
+        self.output_dir = OUTPUT_DIR
         self.watchlist_file = os.path.join(self.output_dir, "watchlist.json")
         self.alerts_file = os.path.join(self.output_dir, "alerts.json")
-        self.cache_dir = "cache"
+        self.cache_dir = CACHE_DIR
         ensure_cache_dir()
+        ensure_output_dir()
         
         # Initialize data collector
         self.collector = DataCollector()
