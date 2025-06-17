@@ -167,123 +167,110 @@ def get_stock_data(ticker, period="1wk"):
     except Exception:
         return None
 
-def calculate_score(stock_data, market_cap):
-    """Calculate a custom score based on various metrics.
+def calculate_score(stock_data: pd.DataFrame, fundamentals: dict):
+    """Extensive dip-score using technical + fundamental factors."""
 
-    Parameters
-    ----------
-    stock_data : pandas.DataFrame
-        DataFrame with ``Close`` and ``Volume`` columns.
-    market_cap : float
-        Market capitalisation of the company. Used to slightly
-        favour larger, more liquid stocks.
-    """
-    if stock_data is None or len(stock_data) < 3:
+    if stock_data is None or len(stock_data) < 20:
         return 0, {}
-    
+
     try:
-        # Calculate basic metrics
-        current_price = stock_data['Close'].iloc[-1]
-        high_5d = stock_data['Close'].tail(5).max()
-        drop_from_high = ((high_5d - current_price) / high_5d) * 100
+        current_price = stock_data["Close"].iloc[-1]
+        high_5d = stock_data["Close"].tail(5).max()
+        drop_pct = ((high_5d - current_price) / high_5d) * 100
 
-        # RSI on a 5 day window to gauge short term momentum
-        rsi = calculate_rsi(stock_data['Close'], period=5).iloc[-1]
+        # RSI 5
+        rsi5 = calculate_rsi(stock_data["Close"], period=5).iloc[-1]
 
-        # Volume compared to average
-        avg_volume = stock_data['Volume'].mean()
-        last_volume = stock_data['Volume'].iloc[-1]
-        volume_ratio = (last_volume / avg_volume) * 100
+        # Volume spike
+        vol_avg20 = stock_data["Volume"].tail(20).mean()
+        vol_ratio = stock_data["Volume"].iloc[-1] / vol_avg20 * 100
 
-        # Consecutive down days in last 3 sessions
-        downs = (stock_data['Close'].diff() < 0).tail(3).sum()
+        # SMA200 (if we have ≥200 observations)
+        sma200 = stock_data["Close"].rolling(window=200).mean().iloc[-1] if len(stock_data) >= 200 else None
+        below_sma = sma200 and current_price < sma200
 
-        # Initialize scoring components
+        # MACD bullish cross last 5 days
+        ema12 = stock_data["Close"].ewm(span=12, adjust=False).mean()
+        ema26 = stock_data["Close"].ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        bullish = (macd.iloc[-2] < signal.iloc[-2]) and (macd.iloc[-1] > signal.iloc[-1])
+
+        # ATR %
+        tr = stock_data[["High", "Low", "Close"]].copy()
+        tr["prev_close"] = tr["Close"].shift(1)
+        tr["tr"] = tr[["High", "prev_close"]].max(axis=1) - tr[["Low", "prev_close"]].min(axis=1)
+        atr14 = tr["tr"].rolling(14).mean().iloc[-1]
+        atr_pct = atr14 / current_price * 100 if atr14 else 0
+
+        # Fundamental fields
+        pe = fundamentals.get("pe") or fundamentals.get("trailingPE")
+        div_yield = fundamentals.get("dividend_yield", 0) or 0
+        beta = fundamentals.get("beta", 1)
+        short_pct = fundamentals.get("short_percent_float", 0) or 0
+
         score = 0
-        score_details = {
-            'price_drop': {
-                'value': f"{drop_from_high:.1f}%",
-                'points': 0,
-                'threshold': '>5%',
-                'max_points': 40,
-            },
-            'rsi': {
-                'value': f"{rsi:.1f}",
-                'points': 0,
-                'threshold': '<40',
-                'max_points': 30,
-            },
-            'volume': {
-                'value': f"{volume_ratio:.1f}% of avg",
-                'points': 0,
-                'threshold': '>150%',
-                'max_points': 20,
-            },
-            'streak': {
-                'value': int(downs),
-                'points': 0,
-                'threshold': '>=3 down days',
-                'max_points': 10,
-            },
-            'market_cap': {
-                'value': f"${market_cap/1e9:.1f}B",
-                'points': 0,
-                'threshold': '>=2B',
-                'max_points': 10,
-            },
-        }
+        details = {}
 
-        # Price drop scoring
-        if drop_from_high >= 10:
-            pd_points = 40
-        elif drop_from_high >= 5:
-            pd_points = 20
+        # Price drop – scaled: 1 pt per % drop (above 3 %), capped 30
+        pd_pts = 0
+        if drop_pct >= 3:
+            pd_pts = min(30, int(drop_pct))
+        score += pd_pts; details["price_drop"] = pd_pts
+
+        # RSI
+        rsi_pts = 25 if rsi5 <= 30 else (10 if rsi5 <= 40 else 0)
+        score += rsi_pts; details["rsi5"] = rsi_pts
+
+        # Volume spike
+        if vol_ratio >= 200:
+            vol_pts = 20
+        elif vol_ratio >= 150:
+            vol_pts = 15
+        elif vol_ratio >= 120:
+            vol_pts = 8
         else:
-            pd_points = 0
-        score += pd_points
-        score_details['price_drop']['points'] = pd_points
+            vol_pts = 0
+        score += vol_pts; details["volume_spike"] = vol_pts
 
-        # RSI scoring
-        if rsi <= 30:
-            rsi_points = 30
-        elif rsi <= 40:
-            rsi_points = 15
+        # Trend filters
+        sma_pts = 10 if below_sma else 0
+        sma50 = stock_data["Close"].rolling(window=50).mean().iloc[-1] if len(stock_data) >= 50 else None
+        below_sma50 = sma50 and current_price < sma50
+        sma50_pts = 5 if below_sma50 else 0
+        score += sma_pts + sma50_pts
+        details["below_sma200"] = sma_pts
+        details["below_sma50"] = sma50_pts
+
+        # MACD bullish (positive histogram)
+        macd_hist = macd.iloc[-1] - signal.iloc[-1]
+        macd_pts = 5 if macd_hist > 0 else 0
+        score += macd_pts; details["macd_bull_cross"] = macd_pts
+
+        # Valuation – PE
+        if pe and pe < 15:
+            pe_pts = 10
+        elif pe and pe < 25:
+            pe_pts = 5
         else:
-            rsi_points = 0
-        score += rsi_points
-        score_details['rsi']['points'] = rsi_points
+            pe_pts = 0
+        score += pe_pts; details["pe"] = pe_pts
 
-        # Volume scoring
-        if volume_ratio >= 200:
-            vol_points = 20
-        elif volume_ratio >= 150:
-            vol_points = 10
-        else:
-            vol_points = 0
-        score += vol_points
-        score_details['volume']['points'] = vol_points
+        # Dividend yield bonus
+        div_pts = 5 if div_yield and div_yield > 0.03 else 0
+        score += div_pts; details["div_yield"] = div_pts
 
-        # Down streak scoring
-        if downs >= 3:
-            streak_points = 10
-        else:
-            streak_points = 0
-        score += streak_points
-        score_details['streak']['points'] = streak_points
+        # Beta penalty for high volatility
+        beta_pts = -5 if beta and beta > 2 else 0
+        score += beta_pts; details["beta"] = beta_pts
 
-        # Market cap scoring (favour established companies)
-        if market_cap >= 1e10:
-            cap_points = 10
-        elif market_cap >= 2e9:
-            cap_points = 5
-        else:
-            cap_points = 0
-        score += cap_points
-        score_details['market_cap']['points'] = cap_points
+        # Short interest penalty
+        short_pts = -10 if short_pct and short_pct > 0.15 else 0
+        score += short_pts; details["short_float"] = short_pts
 
-        return score, score_details
+        return max(score, 0), details
     except Exception as e:
-        print(f"Error calculating score: {str(e)}")
+        print("Error calculating score:", e)
         return 0, {}
 
 def save_to_json(data, filename):

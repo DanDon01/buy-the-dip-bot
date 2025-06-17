@@ -72,56 +72,66 @@ class StockTracker:
             return pd.DataFrame()
         
         # Convert scores to DataFrame
-        scores = []
+        rows = []
         for ticker, data in scores_data['scores'].items():
-            if data['score'] >= 50:  # Only include stocks with score >= 50
-                year_high = market_data.get(ticker, {}).get('year_high')
-                # Compute % below 52-week high if we have the high value
-                pct_below = None
-                if year_high and year_high > 0:
-                    pct_below = ((year_high - data['price']) / year_high) * 100
+            year_high = market_data.get(ticker, {}).get('year_high')
+            pct_below = None
+            if year_high and year_high > 0:
+                pct_below = ((year_high - data['price']) / year_high) * 100
 
-                scores.append({
-                    'ticker': ticker,
-                    'price': data['price'],
-                    'score': data['score'],
-                    'score_details': data['score_details'],
-                    'year_high': year_high,
-                    '%_below_high': round(pct_below, 2) if pct_below is not None else None,
-                    'timestamp': data['timestamp']
-                })
-        
-        if not scores:
-            print("\nNo stocks currently meet the buying criteria.")
+            rows.append({
+                'ticker': ticker,
+                'price': data['price'],
+                'score': data['score'],
+                'score_details': data['score_details'],
+                'year_high': year_high,
+                '%_below_high': round(pct_below, 2) if pct_below is not None else None,
+                'timestamp': data['timestamp']
+            })
+
+        if not rows:
+            print("No scored tickers found. Run update first.")
             return pd.DataFrame()
-        
-        # Convert to DataFrame and sort by score
-        df = pd.DataFrame(scores)
-        df = df.sort_values('score', ascending=False)
+
+        df_all = pd.DataFrame(rows).sort_values('score', ascending=False)
+
+        # Watchlist threshold
+        watch_df = df_all[df_all['score'] >= 50]
+
+        # Ensure at least top 5 rows are shown
+        top_display = df_all.head(5)
         
         # Save results
         timestamp = datetime.now().strftime('%Y%m%d')
         output_file = os.path.join(self.output_dir, f"scan_{timestamp}.csv")
-        df.to_csv(output_file, index=False)
+        df_all.to_csv(output_file, index=False)
         
         # Update watchlist with new opportunities
-        self._update_watchlist(df)
+        self._update_watchlist(watch_df)
         
         # Print results
-        print(f"\nFound {len(df)} potential buying opportunities!")
+        print(f"\nFound {len(watch_df)} potential buying opportunities!")
         print("\nTop 5 stocks by score:")
-        for _, row in df.head().iterrows():
+        for _, row in top_display.iterrows():
             print(f"\n{row['ticker']} (Score: {row['score']})")
             print(f"Current Price: ${row['price']:.2f}")
             if pd.notna(row.get('year_high')):
                 print(f"52-Wk High:  ${row['year_high']:.2f}  |  % Below High: {row['%_below_high']:.1f}%")
             print("Score Breakdown:")
             for metric, details in row['score_details'].items():
-                print(f"  {metric.replace('_', ' ').title()}: {details['points']}/{details['max_points']} points")
-                print(f"    Value: {details['value']} (Threshold: {details['threshold']})")
+                if isinstance(details, dict):
+                    pts = details.get('points', details.get('value', ''))
+                    max_pts = details.get('max_points', '')
+                    thresh = details.get('threshold', '')
+                    val = details.get('value', '')
+                    print(f"  {metric.replace('_', ' ').title()}: {pts}/{max_pts} points")
+                    if val or thresh:
+                        print(f"    Value: {val} (Threshold: {thresh})")
+                else:
+                    print(f"  {metric.replace('_', ' ').title()}: {details} points")
         
         print(f"\nFull results saved to: {output_file}")
-        return df
+        return watch_df
     
     def _update_watchlist(self, opportunities_df):
         """Update watchlist with new opportunities."""

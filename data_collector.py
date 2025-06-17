@@ -189,14 +189,20 @@ class DataCollector:
             print(f"\n🌐 [API] [Bulk {batch_idx}] Fetching price for {len(batch)} symbols…", flush=True)
 
             try:
-                price_map = Ticker(" ".join(batch), asynchronous=False,
-                                   progress=False, timeout=8).price
+                bulk_tkr = Ticker(" ".join(batch), asynchronous=False,
+                                   progress=False, timeout=8)
+                price_map = bulk_tkr.price
+                summary_map = bulk_tkr.summary_detail or {}
+                stats_map = bulk_tkr.key_stats or {}
             except Exception as e:
                 print(f"Bulk price request failed ({e}). Retrying after 15 s…", flush=True)
                 time.sleep(15)
                 try:
-                    price_map = Ticker(" ".join(batch), asynchronous=False,
-                                       progress=False, timeout=8).price
+                    bulk_tkr = Ticker(" ".join(batch), asynchronous=False,
+                                       progress=False, timeout=8)
+                    price_map = bulk_tkr.price
+                    summary_map = bulk_tkr.summary_detail or {}
+                    stats_map = bulk_tkr.key_stats or {}
                 except Exception as e:
                     print(f"Bulk price retry failed – skipping this batch. ({e})", flush=True)
                     # Mark all tickers as bad to avoid infinite loops
@@ -207,7 +213,11 @@ class DataCollector:
             # iterate batch, build info dict, drop the obvious failures
             survivors = []
             for symbol in batch:
-                info = price_map.get(symbol, {}) or {}
+                info = {
+                    **summary_map.get(symbol, {}),
+                    **stats_map.get(symbol, {}),
+                    **(price_map.get(symbol, {}) or {}),
+                }
                 ok = (
                     info.get("regularMarketPrice", 0) > 0
                     and info.get("marketCap", 0) > 0
@@ -219,7 +229,23 @@ class DataCollector:
 
             # for each survivor fetch history (one call / sec)
             for idx, (symbol, info) in enumerate(survivors, 1):
-                print(f"    🌐 [API] [{idx}/{len(survivors)}] {symbol} history…", end="", flush=True)
+                p = info.get("regularMarketPrice")
+                cap = info.get("marketCap")
+                price_str = f"${p:.2f}" if isinstance(p, (int, float)) and p else "n/a"
+                cap_str = f"{cap/1e9:.1f}B" if isinstance(cap, (int, float)) and cap else "n/a"
+                yr_hi = info.get("fiftyTwoWeekHigh")
+                yr_lo = info.get("fiftyTwoWeekLow")
+                hi_str = f"${yr_hi:.2f}" if isinstance(yr_hi, (int, float)) and yr_hi else "n/a"
+                if p and yr_hi:
+                    pct_below = ((yr_hi - p) / yr_hi) * 100
+                    drop_str = f"{pct_below:5.1f}%"
+                else:
+                    drop_str = " n/a "
+                print(
+                    f"    🌐 [API] [{idx}/{len(survivors)}] {symbol:<6} | Price {price_str:<8} | 52W Hi {hi_str:<8} | Δ {drop_str:<6} | Cap {cap_str:<6} -> history…",
+                    end="",
+                    flush=True,
+                )
                 hist = self._fetch_history(symbol)
                 if hist is None or hist.empty:
                     # mark missing history so we don't retry endlessly
@@ -393,16 +419,32 @@ class DataCollector:
         print("\nDaily scores updated!")
         return scores
     
-    def calculate_score(self, data):
-        """Calculate score for a single ticker using utils.calculate_score."""
+    def calculate_score(self, record):
+        """Wrap utils.calculate_score with fundamentals dict."""
         try:
-            df = pd.DataFrame({
-                "Close": data["historical_data"]["close"],
-                "Volume": data["historical_data"]["volume"],
-            })
-            return calculate_score(df, data.get("market_cap", 0))
+            df = pd.DataFrame(
+                {
+                    "Close": record["historical_data"]["close"],
+                    "Volume": record["historical_data"]["volume"],
+                    "High": record["historical_data"]["high"],
+                    "Low": record["historical_data"]["low"],
+                }
+            )
+            fundamentals = {
+                k: record.get(k)
+                for k in (
+                    "pe",
+                    "forward_pe",
+                    "peg",
+                    "dividend_yield",
+                    "beta",
+                    "short_percent_float",
+                    "insider_hold_percent",
+                )
+            }
+            return calculate_score(df, fundamentals)
         except Exception as e:
-            print(f"Error calculating score: {str(e)}")
+            print("Error calculating score:", e)
             return 0, {}
     
     def filter_tickers(self, stock_data, 
@@ -577,6 +619,16 @@ class DataCollector:
                 year_low = year_low or fi.get("yearLow")
             except Exception:
                 pass
+
+        # Fundamental extras
+        pe = price_info.get("trailingPE") or price_info.get("trailingPe")
+        fwd_pe = price_info.get("forwardPE") or price_info.get("forwardPe")
+        peg = price_info.get("pegRatio")
+        div_yield = price_info.get("dividendYield")
+        beta = price_info.get("beta")
+        short_float = price_info.get("shortPercentOfFloat")
+        insider_pct = price_info.get("heldPercentInsiders") or price_info.get("insiderHoldPercent")
+
         return {
             "ticker": ticker,
             "current_price": price_info["regularMarketPrice"],
@@ -585,6 +637,13 @@ class DataCollector:
             "exchange": exchange,
             "year_high": year_high,
             "year_low": year_low,
+            "pe": pe,
+            "forward_pe": fwd_pe,
+            "peg": peg,
+            "dividend_yield": div_yield,
+            "beta": beta,
+            "short_percent_float": short_float,
+            "insider_hold_percent": insider_pct,
             "historical_data": {
                 "close": hist_df["Close"].tolist(),
                 "volume": hist_df["Volume"].tolist(),
@@ -608,7 +667,7 @@ class DataCollector:
             with open(path, "w") as f:
                 json.dump(tickers, f, indent=4)
 
-    def update_top_scores(self, top_n=100):
+    def update_top_scores(self, top_n=100, recalc_scores: bool = False):
         """Re-fetch price & history for the **top_n** highest-scoring tickers.
 
         This is useful after the daily scan if you want the very latest data
@@ -628,16 +687,24 @@ class DataCollector:
         )[:top_n]
         tickers = [t for t, _ in top_records]
 
-        if not tickers:
-            print("No tickers found in scores data – aborting top-score update.")
-            return None
+        # If we don't have enough tickers in scores.json (e.g. first run),
+        # fall back to the filtered_top_500 CSV to pad the list.
+        if len(tickers) < top_n:
+            from run_filter import run_filter
+
+            extra = run_filter(top_n=top_n)
+            # Keep order stable & avoid duplicates
+            for sym in extra:
+                if sym not in tickers and len(tickers) < top_n:
+                    tickers.append(sym)
 
         print(f"Updating detailed data for {len(tickers)} top-scoring tickers…")
         # Process tickers – this will update stock_data.json and caches in place
         self.process_ticker_batch(tickers)
 
-        # After fresh data, recompute their scores so file stays consistent
-        self.update_daily_scores(tickers)
+        # After fresh data, optionally recompute their scores so file stays consistent
+        if recalc_scores:
+            self.update_daily_scores(tickers)
 
         return tickers
 

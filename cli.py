@@ -17,6 +17,7 @@ from datetime import datetime
 from tracker import StockTracker
 from data_collector import DataCollector
 from utils import load_scores, save_top_scores_to_csv
+import yfinance as yf
 
 def main():
     parser = argparse.ArgumentParser(description="🤖 Buy The Dip Bot CLI")
@@ -92,8 +93,8 @@ def main():
     if args.update:
         print("🌐📡 API CALL: Re-fetching detailed info for top tickers…")
         dc = DataCollector()
-        dc.update_top_scores(args.top)
-        print("✅ Detailed updates complete.\n")
+        updated = dc.update_top_scores(args.top, recalc_scores=False)
+        print(f"✅ Detailed updates complete for {len(updated) if updated else 0} tickers.\n")
 
     print("👋 Done for now. Check the output folder!")
 
