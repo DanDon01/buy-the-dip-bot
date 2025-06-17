@@ -75,11 +75,19 @@ class StockTracker:
         scores = []
         for ticker, data in scores_data['scores'].items():
             if data['score'] >= 50:  # Only include stocks with score >= 50
+                year_high = market_data.get(ticker, {}).get('year_high')
+                # Compute % below 52-week high if we have the high value
+                pct_below = None
+                if year_high and year_high > 0:
+                    pct_below = ((year_high - data['price']) / year_high) * 100
+
                 scores.append({
                     'ticker': ticker,
                     'price': data['price'],
                     'score': data['score'],
                     'score_details': data['score_details'],
+                    'year_high': year_high,
+                    '%_below_high': round(pct_below, 2) if pct_below is not None else None,
                     'timestamp': data['timestamp']
                 })
         
@@ -105,6 +113,8 @@ class StockTracker:
         for _, row in df.head().iterrows():
             print(f"\n{row['ticker']} (Score: {row['score']})")
             print(f"Current Price: ${row['price']:.2f}")
+            if pd.notna(row.get('year_high')):
+                print(f"52-Wk High:  ${row['year_high']:.2f}  |  % Below High: {row['%_below_high']:.1f}%")
             print("Score Breakdown:")
             for metric, details in row['score_details'].items():
                 print(f"  {metric.replace('_', ' ').title()}: {details['points']}/{details['max_points']} points")

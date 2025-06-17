@@ -186,7 +186,7 @@ class DataCollector:
         all_stock_data = {}
 
         for batch_idx, batch in enumerate(self._chunked(tickers, BULK_PRICE_SIZE), 1):
-            print(f"\n[Bulk {batch_idx}] Fetching price for {len(batch)} symbols…", flush=True)
+            print(f"\n🌐 [API] [Bulk {batch_idx}] Fetching price for {len(batch)} symbols…", flush=True)
 
             try:
                 price_map = Ticker(" ".join(batch), asynchronous=False,
@@ -219,7 +219,7 @@ class DataCollector:
 
             # for each survivor fetch history (one call / sec)
             for idx, (symbol, info) in enumerate(survivors, 1):
-                print(f"    [{idx}/{len(survivors)}] {symbol} history…", end="", flush=True)
+                print(f"    🌐 [API] [{idx}/{len(survivors)}] {symbol} history…", end="", flush=True)
                 hist = self._fetch_history(symbol)
                 if hist is None or hist.empty:
                     # mark missing history so we don't retry endlessly
@@ -319,8 +319,12 @@ class DataCollector:
         
         return stock_data
     
-    def update_daily_scores(self):
-        """Update daily scores for filtered tickers."""
+    def update_daily_scores(self, ticker_subset: list | None = None):
+        """Update daily scores.
+
+        If *ticker_subset* is provided, only those tickers are rescored.
+        Otherwise the whole ``stock_data.json`` universe is used.
+        """
         try:
             # Load current stock data
             with open(self.data_file, 'r') as f:
@@ -334,12 +338,19 @@ class DataCollector:
             'last_update': datetime.now().isoformat(),
             'scores': {}
         }
-        
-        total = len(stock_data)
+
+        # Determine which tickers to evaluate
+        if ticker_subset:
+            tickers_to_process = [t for t in ticker_subset if t in stock_data]
+        else:
+            tickers_to_process = list(stock_data.keys())
+
+        total = len(tickers_to_process)
         processed = 0
         start_time = time.time()
         
-        for ticker, data in stock_data.items():
+        for ticker in tickers_to_process:
+            data = stock_data[ticker]
             processed += 1
             
             if processed % 10 == 0:
@@ -367,11 +378,17 @@ class DataCollector:
             json.dump(scores, f, indent=4)
         
         # Update last daily update timestamp
-        with open(self.last_update_file, 'r') as f:
-            update_data = json.load(f)
+        if os.path.exists(self.last_update_file):
+            with open(self.last_update_file, 'r') as f:
+                update_data = json.load(f)
+        else:
+            update_data = {
+                'last_weekly_update': datetime.now().isoformat(),
+                'last_daily_update': datetime.now().isoformat()
+            }
         update_data['last_daily_update'] = datetime.now().isoformat()
         with open(self.last_update_file, 'w') as f:
-            json.dump(update_data, f)
+            json.dump(update_data, f, indent=4)
         
         print("\nDaily scores updated!")
         return scores
@@ -545,12 +562,29 @@ class DataCollector:
             )
         market_cap = price_info["marketCap"]
         exchange = price_info.get("exchange", price_info.get("exchangeName", ""))
+        # 52-week range
+        year_high = price_info.get("fiftyTwoWeekHigh")
+        year_low = price_info.get("fiftyTwoWeekLow")
+
+        # Fallback to yfinance fast_info if not available (rare)
+        if (year_high is None or year_low is None) and ticker:
+            try:
+                import yfinance as yf
+
+                yf_ticker = yf.Ticker(ticker)
+                fi = yf_ticker.fast_info
+                year_high = year_high or fi.get("yearHigh")
+                year_low = year_low or fi.get("yearLow")
+            except Exception:
+                pass
         return {
             "ticker": ticker,
             "current_price": price_info["regularMarketPrice"],
             "avg_volume": avg_volume,
             "market_cap": market_cap,
             "exchange": exchange,
+            "year_high": year_high,
+            "year_low": year_low,
             "historical_data": {
                 "close": hist_df["Close"].tolist(),
                 "volume": hist_df["Volume"].tolist(),
@@ -573,6 +607,39 @@ class DataCollector:
             path = os.path.join(out_dir, f"{ex}.json")
             with open(path, "w") as f:
                 json.dump(tickers, f, indent=4)
+
+    def update_top_scores(self, top_n=100):
+        """Re-fetch price & history for the **top_n** highest-scoring tickers.
+
+        This is useful after the daily scan if you want the very latest data
+        for your watch-list without touching the full universe.
+        """
+        # Load current scores
+        try:
+            with open(self.scores_file, "r") as f:
+                scores_data = json.load(f)
+        except FileNotFoundError:
+            print("No daily scores found. Run update_daily_scores() first.")
+            return None
+
+        # Determine top N tickers by score
+        top_records = sorted(
+            scores_data.get("scores", {}).items(), key=lambda x: x[1]["score"], reverse=True
+        )[:top_n]
+        tickers = [t for t, _ in top_records]
+
+        if not tickers:
+            print("No tickers found in scores data – aborting top-score update.")
+            return None
+
+        print(f"Updating detailed data for {len(tickers)} top-scoring tickers…")
+        # Process tickers – this will update stock_data.json and caches in place
+        self.process_ticker_batch(tickers)
+
+        # After fresh data, recompute their scores so file stays consistent
+        self.update_daily_scores(tickers)
+
+        return tickers
 
 if __name__ == "__main__":
     collector = DataCollector()

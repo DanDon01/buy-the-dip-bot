@@ -100,11 +100,24 @@ def load_scores(path="cache/daily_scores.json"):
         return json.load(f)
 
 def save_top_scores_to_csv(scores, top_n):
+    """Write the *top_n* highest-scoring tickers to *output/top_{n}.csv*."""
+    if not scores:
+        print("No score records supplied – CSV not written.")
+        return
+
     sorted_scores = sorted(scores, key=lambda x: x["score"], reverse=True)[:top_n]
-    with open(f"output/top_{top_n}.csv", "w", newline="") as f:
+
+    # Make sure the output directory exists
+    os.makedirs("output", exist_ok=True)
+
+    from datetime import datetime
+    date_str = datetime.now().strftime("%Y%m%d")
+    path = f"output/top_{top_n}_{date_str}.csv"
+    with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=sorted_scores[0].keys())
         writer.writeheader()
-        writer.writerows(sorted_scores)            
+        writer.writerows(sorted_scores)
+    print(f"Saved {len(sorted_scores)} records to {path}")
 
 def calculate_rsi(prices, period=14):
     """Calculate Relative Strength Index (RSI) for a series of prices."""
