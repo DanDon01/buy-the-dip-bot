@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 import json
+import csv
 from io import StringIO
 import time
 import logging
@@ -93,6 +94,17 @@ def suppress_output():
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+            
+def load_scores(path="cache/daily_scores.json"):
+    with open(path) as f:
+        return json.load(f)
+
+def save_top_scores_to_csv(scores, top_n):
+    sorted_scores = sorted(scores, key=lambda x: x["score"], reverse=True)[:top_n]
+    with open(f"output/top_{top_n}.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=sorted_scores[0].keys())
+        writer.writeheader()
+        writer.writerows(sorted_scores)            
 
 def calculate_rsi(prices, period=14):
     """Calculate Relative Strength Index (RSI) for a series of prices."""

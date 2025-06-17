@@ -4,18 +4,19 @@
 
 ## 🚀 Features
 
-- 📉 Scans and scores thousands of stocks daily
-- ✅ Uses your custom checklist (e.g., % drop from 52w high, RSI, P/E)
+- 📉 Scans and scores thousands of U.S. stocks every day
+- ♻️ Seamlessly resumes after interruptions thanks to persistent caches (validated tickers, unsupported symbols, stock data)
+- ✅ Enhanced scoring model (52-week dip, RSI bands, volume spike, down-streak, market-cap weight)
 - 🔍 Filters out weak stocks and keeps tracking promising ones for a week
-- 📊 Generates a rolling shortlist of top candidates
+- 🗂️ Writes per-exchange JSON snapshots for quick debugging
+- 📊 Generates daily CSVs + maintains rolling watch-list & alert log
 - 🧠 Detects "Perfect Buy" conditions and logs alerts
-- 📁 Outputs daily CSVs + maintains a 7-day memory of watchlist candidates
 - 💪 Built using the Kaizen philosophy: continuous daily improvements
 
 ## 🛠️ Tech Stack
 
 - Python 3
-- `yfinance` for stock data
+- `yahooquery` for stock data (faster & fewer rate-limits)
 - `pandas` for data wrangling
 - JSON for internal state tracking
 - CSV output for easy review
@@ -31,6 +32,11 @@
 ├── alerts_log.csv          # Log of any "Perfect Buy" matches
 ├── cache/                  # Cached stock data and scan results
 │   └── stock_info_cache.json
+│   ├── validated_tickers.json
+│   ├── unsupported.json
+│   ├── stock_data.json
+│   └── daily_scores.json
+│   └── stock_info_cache.json
 ├── output/                 # Daily output CSVs
 └── README.md               # You're reading it, legend
 ```
@@ -40,10 +46,10 @@
 1. **Smart Ticker Selection**
    - Fetches S&P 500 and Nasdaq tickers
    - Filters based on:
-     - Market Cap > $100M
-     - Average Volume > 100K
-     - Major exchanges only (NYSE/Nasdaq)
-   - Reduces initial scan from 6000+ to ~800-1000 quality stocks
+     - Market Cap > $10M
+     - Average Volume > 50K
+     - Major US exchanges (NYSE, Nasdaq, NGM, NCM)
+   - Reduces initial scan from 6000+ to ~2 000 quality stocks
 
 2. **Efficient Data Management**
    - Implements smart caching system
@@ -72,7 +78,7 @@
 Install requirements:
 
 ```bash
-pip install yfinance pandas requests beautifulsoup4
+pip install yahooquery pandas requests beautifulsoup4
 ```
 
 Then simply run:
@@ -90,28 +96,13 @@ The bot will:
 
 ## 🔧 Recent Improvements
 
-- **Optimized Ticker Selection**
-  - Reduced scan pool from 6000+ to ~800-1000 stocks
-  - Focus on liquid, established companies
-  - Better quality opportunities
-
-- **Smart Caching System**
-  - 24-hour stock data cache
-  - 12-hour scan results cache
-  - 80-90% reduction in API calls
-  - Automatic cache management
-
-- **Performance Enhancements**
-  - Parallel processing of tickers
-  - Batch processing to avoid rate limits
-  - Real-time progress updates
-  - Better error handling
-
-- **Data Quality**
-  - Improved validation
-  - Better error reporting
-  - Consistent data types
-  - Reliable caching
+- **Switched to yahooquery** — avoids the heavy rate-limits of `yfinance` and supports bulk price requests
+- **Bulk + Serial Fetch Strategy** — 150-symbol price bulks followed by one-per-second history calls stay safely under Yahoo limits
+- **Resume & Robustness** — caches validated tickers, skips unsupported symbols, and restarts exactly where it left off
+- **Per-Exchange Snapshots** — interim JSON files split by exchange help quick inspection & debugging
+- **Scoring Overhaul** — new metrics (52-week dip, RSI tiers, volume spike, down-streak, market-cap weight) spread scores 0-100
+- **Lower Filter Thresholds** — market-cap & volume floors lowered (>$10 M, >50 K) to surface more small-cap opportunities
+- **Cleaner Logs** — more explicit reasons when a symbol is rejected and progress bars everywhere
 
 ## 💡 Coming Soon
 
