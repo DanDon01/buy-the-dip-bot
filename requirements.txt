@@ -1,6 +1,9 @@
-pandas
-numpy
-requests
-beautifulsoup4
-yahooquery 
-streamlit 
+flask==3.0.0
+flask-assets==2.1.0
+pandas==2.1.0
+plotly==5.18.0
+dash==2.14.0
+yfinance==0.2.36
+yahooquery==2.3.7
+python-dotenv==1.0.0
+Flask-Cors==4.0.1 

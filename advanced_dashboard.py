@@ -19,7 +19,7 @@ import ast
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode, GridUpdateMode
 
-# --------------------------- Constants & Tooltips ---------------------------
+# --------------------------- Constants & Theme ---------------------------
 
 OUTPUT_DIR, PATTERN = "output", "scan_*.csv"
 
@@ -37,6 +37,33 @@ TOOLTIPS = {
     "short_float": "Penalty for very high short interest as a % of float.",
     "%_below_high": "Percentage the current price is below the 52-week high."
 }
+
+def inject_dark_aggrid_styles():
+    """Force dark theme on AG-Grid components."""
+    st.markdown("""
+        <style>
+        .ag-theme-alpine-dark .ag-header,
+        .ag-theme-alpine-dark .ag-header-cell,
+        .ag-theme-alpine-dark .ag-cell,
+        .ag-theme-alpine-dark .ag-row,
+        .ag-theme-alpine-dark .ag-row-even,
+        .ag-theme-alpine-dark .ag-row-odd {
+            background-color: #1e1e1e !important;
+            color: #f5f5f5 !important;
+        }
+        .ag-theme-alpine-dark .ag-root-wrapper {
+            border: 1px solid #444;
+        }
+        /* Selected row highlight */
+        .ag-theme-alpine-dark .ag-row-selected {
+            background-color: #2d3748 !important;
+        }
+        /* Hover state */
+        .ag-theme-alpine-dark .ag-row:hover {
+            background-color: #2d3748 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 # --------------------------- Data Loading & Processing ---------------------------
 
@@ -79,6 +106,23 @@ if df is None:
     st.error(f"No scan CSVs found in `{OUTPUT_DIR}/`. Please run the bot's `--score` command first.")
     st.stop()
 
+# --------------------------- Main Layout ---------------------------
+
+# Force dark theme on all grids
+inject_dark_aggrid_styles()
+
+st.title("📉 Buy-The-Dip Stock Screener v1.3")
+
+# --- Summary Metrics ---
+scan_date = df.timestamp.max().strftime("%b %d, %Y %H:%M") if "timestamp" in df.columns else "N/A"
+top_3_str = ", ".join(df.sort_values("score", ascending=False).head(3).ticker)
+
+c1, c2, c3 = st.columns(3)
+with c1: st.metric("📅 Last Scan", scan_date)
+with c2: st.metric("📊 Average Score", f"{df.score.mean():.1f}")
+with c3: st.metric("🏆 Top 3 Tickers", top_3_str)
+st.markdown("---")
+
 # --------------------------- Sidebar Filters ---------------------------
 
 st.sidebar.header("Screener Filters")
@@ -99,93 +143,64 @@ if query:
 if rows_choice != "All":
     filtered_df = filtered_df.head(int(rows_choice))
 
-# --------------------------- Main Page Layout ---------------------------
-
-st.title("📉 Buy-The-Dip Stock Screener v1.2")
-
-# --- Summary Metrics ---
-scan_date = df.timestamp.max().strftime("%b %d, %Y %H:%M") if "timestamp" in df.columns else "N/A"
-top_3_str = ", ".join(df.sort_values("score", ascending=False).head(3).ticker)
-
-c1, c2, c3 = st.columns(3)
-with c1: st.metric("📅 Last Scan", scan_date)
-with c2: st.metric("📊 Average Score", f"{df.score.mean():.1f}")
-with c3: st.metric("🏆 Top 3 Tickers", top_3_str)
-st.markdown("---")
-
-# --- AgGrid Table & Detail Panel ---
+# --------------------------- Main Grid & Detail Panel ---------------------------
 main_col, detail_col = st.columns([2, 1])
 
 with main_col:
-    gb = GridOptionsBuilder.from_dataframe(filtered_df)
-    gb.configure_default_column(resizable=True, filter=True, sortable=True, minWidth=80)
-    
-    # Add tooltips and styling
-    for col, tip in TOOLTIPS.items():
-        if col in filtered_df.columns:
-            gb.configure_column(col, headerTooltip=tip)
-            
-    gb.configure_column("score", cellStyle=JsCode("params => params.value >= 70 ? {color: '#4CAF50', fontWeight: 'bold'} : params.value <= 40 ? {color: '#F44336'} : {color: 'white'}"))
-    gb.configure_column("%_below_high", cellStyle=JsCode("params => params.value >= 15 ? {backgroundColor: 'rgba(76, 175, 80, 0.2)'} : null"))
-    
-    # Hide raw data and score component columns to keep the grid clean
-    score_component_cols = [
-        "price_drop", "rsi5", "volume_spike", "below_sma200", "below_sma50",
-        "macd_bull_cross", "pe", "div_yield", "beta", "short_float"
-    ]
-    cols_to_hide = [c for c in score_component_cols if c in filtered_df.columns]
-    cols_to_hide.extend(['timestamp', 'year_high', 'year_low'])
-    gb.configure_columns(cols_to_hide, hide=True)
-    
-    # Updated selection configuration to address deprecation warnings
-    gb.configure_selection(selection_mode="single", use_checkbox=False)
-    grid_options = gb.build()
+    # Explicit dark styling per column
+    dark_cell_style = {'backgroundColor': '#1e1e1e', 'color': '#f5f5f5'}
 
-    # Remove excess empty space by auto-adjusting grid height
-    grid_options["domLayout"] = "autoHeight"
-
-    # Define custom CSS for a robust dark theme
-    custom_css = {
-        ".ag-theme-alpine-dark": {
-            "--ag-background-color": "#16191f",
-            "--ag-header-background-color": "#262730",
-            "--ag-odd-row-background-color": "#1f2229",
-            "--ag-row-hover-color": "#4a5464",
-            "--ag-font-family": "sans-serif",
-            "--ag-font-size": "16px",
-            "--ag-foreground-color": "#e0e0e0",
-            "--ag-header-foreground-color": "#fafafa",
-            "--ag-border-color": "#303338",
-            "--ag-selected-row-background-color": "#4a5464 !important"
+    grid_options = {
+        "defaultColDef": {
+            "resizable": True,
+            "sortable": True,
+            "filter": True,
         },
-        ".ag-theme-alpine-dark .ag-center-cols-viewport": {
-            "background-color": "#16191f !important"
-        },
-        ".ag-theme-alpine-dark .ag-body-viewport": {
-            "background-color": "#16191f !important"
-        },
-        ".ag-theme-alpine-dark .ag-body": {
-            "background-color": "#16191f !important"
-        }
+        "columnDefs": [
+            {
+                "headerName": "Ticker",
+                "field": "ticker",
+                "cellStyle": dark_cell_style
+            },
+            {
+                "headerName": "Price",
+                "field": "price",
+                "type": "numericColumn",
+                "cellStyle": dark_cell_style
+            },
+            {
+                "headerName": "Score",
+                "field": "score",
+                "type": "numericColumn",
+                "cellStyle": dark_cell_style
+            },
+            {
+                "headerName": "% Below High",
+                "field": "%_below_high",
+                "type": "numericColumn",
+                "cellStyle": dark_cell_style
+            },
+        ],
+        "rowStyle": dark_cell_style,
+        "rowSelection": "single"
     }
 
     grid_response = AgGrid(
         filtered_df,
         gridOptions=grid_options,
+        theme="alpine-dark",  # still required for outer wrappers
         height=600,
-        width='100%',
-        theme="alpine-dark",
-        custom_css=custom_css, # Apply the robust custom theme
+        use_container_width=True,  # replaces fit_columns
+        enable_enterprise_modules=False,
         update_mode=GridUpdateMode.SELECTION_CHANGED,
-        allow_unsafe_jscode=True,
-        fit_columns_on_grid_load=True, # Fit columns to screen
     )
     selected_rows = grid_response['selected_rows']
 
+
 with detail_col:
     st.subheader("🔍 Ticker Detail")
-    if selected_rows is not None and not selected_rows.empty:
-        row = selected_rows.iloc[0]
+    if selected_rows:
+        row = pd.Series(selected_rows[0])
         st.metric(f"**{row['ticker']}**", f"${row['price']:.2f}", f"{row.get('%_below_high', 0):.1f}% below 52W high")
         
         st.markdown("---")
@@ -204,15 +219,30 @@ with detail_col:
         col1, col2 = st.columns(2)
         i = 0
         for metric, points in score_data.items():
-            if points != 0: # Only display score components that have a value
+            if points != 0:  # Only display non-zero scores
                 target_col = col1 if i % 2 == 0 else col2
                 target_col.metric(metric, f"{points:g}")
                 i += 1
             
         st.markdown("---")
         st.markdown("##### Raw Data")
-        st.json(row.dropna().to_dict(), expanded=False)
-
+        
+        # Display raw data in a grid
+        raw_df = pd.DataFrame(row.dropna()).reset_index()
+        raw_df.columns = ["Field", "Value"]
+        
+        raw_gb = GridOptionsBuilder.from_dataframe(raw_df)
+        raw_gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True)
+        raw_grid_opts = raw_gb.build()
+        
+        AgGrid(
+            raw_df,
+            gridOptions=raw_grid_opts,
+            theme="alpine-dark",
+            height=300,
+            fit_columns_on_grid_load=True,
+            enable_enterprise_modules=False,
+        )
     else:
         st.info("Click a row in the table to see detailed info here.")
 
@@ -223,7 +253,7 @@ st.caption(f"Data from `{csv_filename}` | Dashboard updated: {datetime.now():%Y-
 st.markdown("""
 <style>
     /* General font size increase for better readability */
-    html, body, [class*="st-"], .ag-theme-alpine-dark {
+    html, body, [class*="st-"] {
         font-size: 16px;
     }
     /* Tighter, cleaner metric cards */
@@ -232,9 +262,6 @@ st.markdown("""
         border: 1px solid #303338;
         padding: 1rem;
         border-radius: 0.5rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    .st-ag-grid {
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
 </style>
