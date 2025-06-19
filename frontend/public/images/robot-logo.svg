@@ -1,0 +1,45 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .robot-body { fill: #10b981; }
+      .robot-eyes { fill: #f9fafb; }
+      .robot-mouth { fill: #f9fafb; }
+      .chart-bars { fill: #f9fafb; }
+      .arrow { fill: #10b981; stroke: #10b981; stroke-width: 2; }
+    </style>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="200" cy="200" r="180" fill="#1e293b"/>
+  
+  <!-- Robot Head -->
+  <rect x="120" y="80" width="160" height="120" rx="20" class="robot-body"/>
+  
+  <!-- Robot Antenna -->
+  <rect x="195" y="50" width="10" height="40" class="robot-body"/>
+  <circle cx="200" cy="40" r="15" class="robot-body"/>
+  
+  <!-- Robot Ears -->
+  <rect x="100" y="120" width="25" height="40" rx="12" class="robot-body"/>
+  <rect x="275" y="120" width="25" height="40" rx="12" class="robot-body"/>
+  
+  <!-- Robot Eyes -->
+  <circle cx="155" cy="130" r="18" class="robot-eyes"/>
+  <circle cx="245" cy="130" r="18" class="robot-eyes"/>
+  
+  <!-- Robot Mouth -->
+  <rect x="160" y="165" width="80" height="15" rx="7" class="robot-mouth"/>
+  
+  <!-- Chart Bars -->
+  <rect x="50" y="280" width="30" height="80" class="chart-bars"/>
+  <rect x="90" y="320" width="30" height="40" class="chart-bars"/>
+  <rect x="130" y="260" width="30" height="100" class="chart-bars"/>
+  <rect x="170" y="300" width="30" height="60" class="chart-bars"/>
+  
+  <!-- Upward Arrow -->
+  <path d="M220 240 L280 300 L350 230 L320 230 L320 280 L280 280 L280 200 L240 240 Z" class="arrow"/>
+  
+  <!-- Curved Arrow -->
+  <path d="M200 350 Q280 320 340 280" stroke="#10b981" stroke-width="8" fill="none"/>
+  <path d="M330 270 L340 280 L330 290 Z" class="arrow"/>
+</svg> 

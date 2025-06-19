@@ -119,23 +119,66 @@ const StockDetailPage = () => {
     '52_week_high': extraDetails?.['52_week_high']
   })) || [];
 
-  // Create radar chart data for individual stock
-  const radarData = [{
-    factor: 'Overall Score',
-    value: stock.score,
+  // Color array for different factors
+  const radarColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+
+  // Create radar chart data for individual stock with color mapping
+  const radarData: any[] = [];
+  const colorMap: { [key: string]: string } = {};
+
+  // Add overall score
+  radarData.push({
+    subject: 'Overall Score',
+    A: stock.score,
     fullMark: 10
-  }];
+  });
+  colorMap['Overall Score'] = radarColors[0];
 
   // Add individual score components if available
   if (stock.score_details) {
-    Object.entries(stock.score_details).forEach(([key, value]: [string, any]) => {
+    Object.entries(stock.score_details).forEach(([key, value]: [string, any], index) => {
+      const factorName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
       radarData.push({
-        factor: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        value: value * 10, // Scale to 0-10
+        subject: factorName,
+        A: value * 10, // Scale to 0-10
         fullMark: 10
       });
+      colorMap[factorName] = radarColors[(index + 1) % radarColors.length];
     });
   }
+  
+  // Color calculation function for scores - more subtle version
+  const getScoreColor = (value: number) => {
+    // Normalize value to 0-1 range (assuming max score is 1)
+    const normalized = Math.min(Math.max(value, 0), 1);
+    
+    if (normalized <= 0.5) {
+      // Muted red to amber (0-0.5)
+      const ratio = normalized * 2;
+      return `rgb(${220}, ${Math.round(140 + 80 * ratio)}, ${Math.round(60 * ratio)})`;
+    } else {
+      // Amber to muted green (0.5-1)
+      const ratio = (normalized - 0.5) * 2;
+      return `rgb(${Math.round(220 - 100 * ratio)}, ${220}, ${Math.round(60 + 80 * ratio)})`;
+    }
+  };
+
+  // Technical explanations for each metric
+  const getMetricExplanation = (key: string) => {
+    const explanations: { [key: string]: string } = {
+      'volume_spike': 'Measures unusual trading volume compared to average. High values indicate increased market interest and potential price movement.',
+      'short_float': 'Percentage of shares sold short. High short interest can lead to short squeezes when price rises.',
+      'rsi': 'Relative Strength Index - momentum oscillator measuring speed of price changes. Values below 30 suggest oversold conditions.',
+      'price_drop': 'Recent price decline from highs. Higher values indicate potential buying opportunities at discounted prices.',
+      'pe': 'Price-to-Earnings ratio evaluation. Lower values may indicate undervalued stocks relative to earnings.',
+      'macd_bull_cross': 'MACD bullish crossover signal. Indicates potential upward momentum when moving averages cross positively.',
+      'div_yield': 'Dividend yield attractiveness. Higher yields provide better income potential for dividend investors.',
+      'beta': 'Stock volatility relative to market. Lower beta suggests less volatile, more stable price movements.',
+      'below_sma50': 'Price position relative to 50-day moving average. Being below may indicate oversold conditions.',
+      'below_sma200': 'Price position relative to 200-day moving average. Being below long-term average may signal value opportunity.'
+    };
+    return explanations[key] || 'Technical analysis metric used in stock scoring algorithm.';
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -236,8 +279,39 @@ const StockDetailPage = () => {
               <RadarChart data={radarData}>
                 <PolarGrid stroke="#475569" />
                 <PolarAngleAxis 
-                  dataKey="factor" 
-                  tick={{ fill: '#cbd5e1', fontSize: 12 }}
+                  dataKey="subject"
+                  tick={(props: any) => {
+                    const { x, y, payload, index } = props;
+                    const color = radarColors[index % radarColors.length];
+                    
+                    // Calculate center point (assuming center is around 150,150 for typical radar size)
+                    const centerX = 150;
+                    const centerY = 150;
+                    
+                    // Calculate direction from center to current position
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    
+                    // Normalize and extend outward by 20 pixels
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    const offsetDistance = 20;
+                    const newX = x + (dx / length) * offsetDistance;
+                    const newY = y + (dy / length) * offsetDistance;
+                    
+                    return (
+                      <text
+                        x={newX}
+                        y={newY}
+                        fill={color}
+                        fontSize={12}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="font-medium"
+                      >
+                        {payload.value}
+                      </text>
+                    );
+                  }}
                   className="text-slate-300"
                 />
                 <PolarRadiusAxis 
@@ -252,14 +326,67 @@ const StockDetailPage = () => {
                     border: '1px solid #475569', 
                     borderRadius: '8px' 
                   }}
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      // Only show tooltip for the main score data, filter out layer data
+                      const scoreData = payload.find((item: any) => item.name === 'Score');
+                      if (scoreData) {
+                        return (
+                          <div style={{
+                            backgroundColor: '#1e293b',
+                            border: '1px solid #475569',
+                            borderRadius: '8px',
+                            padding: '8px'
+                          }}>
+                            <p style={{ color: '#cbd5e1', margin: 0 }}>
+                              {`${label}: ${typeof scoreData.value === 'number' ? scoreData.value.toFixed(2) : scoreData.value || 'N/A'}`}
+                            </p>
+                          </div>
+                        );
+                      }
+                    }
+                    return null;
+                  }}
                 />
-                <Radar 
-                  name={stock.ticker}
-                  dataKey="value" 
-                  stroke="#3b82f6" 
-                  fill="#3b82f6" 
-                  fillOpacity={0.2} 
-                  strokeWidth={2} 
+                
+                {/* Create multiple overlapping radars with different colors */}
+                {radarColors.map((color, colorIndex) => (
+                  <Radar
+                    key={`color-${colorIndex}`}
+                    name={`Layer ${colorIndex}`}
+                    dataKey="A"
+                    stroke={color}
+                    fill={color}
+                    fillOpacity={0.08}
+                    strokeWidth={1}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                ))}
+                
+                {/* Main radar with colored dots on top */}
+                <Radar
+                  name="Score"
+                  dataKey="A"
+                  stroke="transparent"
+                  fill="transparent"
+                  fillOpacity={0}
+                  strokeWidth={0}
+                  dot={(dotProps: any) => {
+                    const { cx, cy, index } = dotProps;
+                    const color = radarColors[index % radarColors.length];
+                    return (
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={5}
+                        fill={color}
+                        stroke={color}
+                        strokeWidth={2}
+                      />
+                    );
+                  }}
+                  isAnimationActive={false}
                 />
               </RadarChart>
             </ResponsiveContainer>
@@ -273,20 +400,49 @@ const StockDetailPage = () => {
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">
           <h2 className="text-2xl font-bold text-white mb-6">Score Breakdown</h2>
           <div className="grid grid-cols-2 gap-4">
-            {Object.entries(stock.score_details).map(([key, value]: [string, any]) => (
-              <div key={key} className="bg-slate-700 border border-slate-600 p-4 rounded-lg text-center hover:border-slate-500 transition-colors">
-                <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">
-                  {key.replace(/_/g, ' ')}
-                </h3>
-                <p className="text-2xl font-bold text-white">{value.toFixed(2)}</p>
-                <div className="w-full bg-slate-600 rounded-full h-1 mt-3">
-                  <div 
-                    className="bg-blue-500 h-1 rounded-full transition-all duration-300" 
-                    style={{ width: `${Math.min(value * 10, 100)}%` }}
-                  ></div>
+            {Object.entries(stock.score_details).map(([key, value]: [string, any]) => {
+              const isHighScore = value >= 0.8; // Consider 0.8+ as high score
+              const scoreColor = getScoreColor(value);
+              const explanation = getMetricExplanation(key);
+              
+              return (
+                <div 
+                  key={key} 
+                  className={`bg-slate-700 border-2 p-4 rounded-lg text-center hover:bg-slate-600 transition-all duration-300 cursor-help group relative ${
+                    isHighScore ? 'border-amber-600/60 shadow-md shadow-amber-600/10' : 'border-slate-600 hover:border-slate-500'
+                  }`}
+                  title={explanation}
+                >
+                  <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">
+                    {key.replace(/_/g, ' ')}
+                  </h3>
+                  <p 
+                    className="text-2xl font-bold mb-3" 
+                    style={{ color: scoreColor }}
+                  >
+                    {value.toFixed(2)}
+                  </p>
+                  <div className="w-full bg-slate-600 rounded-full h-1">
+                    <div 
+                      className="h-1 rounded-full transition-all duration-300" 
+                      style={{ 
+                        width: `${Math.min(value * 100, 100)}%`,
+                        backgroundColor: scoreColor
+                      }}
+                    ></div>
+                  </div>
+                  
+                  {/* Tooltip */}
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                    <div className="bg-slate-900 border border-slate-600 rounded-lg p-3 text-xs text-slate-300 max-w-xs">
+                      <div className="font-semibold text-white mb-1">{key.replace(/_/g, ' ').toUpperCase()}</div>
+                      {explanation}
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
