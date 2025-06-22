@@ -13,6 +13,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from itertools import islice
+from dotenv import load_dotenv
+
+# Load environment variables from .env (if present) early so FINNHUB_API_KEY is available
+load_dotenv()
+
+# Integrate Finnhub for fundamental data (bulk API) while retaining Yahoo for refresh
+try:
+    from collectors.finnhub_collector import FinnhubCollector
+except Exception:
+    FinnhubCollector = None  # type: ignore – handled at runtime
 
 BULK_PRICE_SIZE = 150   # 1 500 is Yahoo's hard max, 150 keeps responses small
 HISTORY_RATE_LIMIT = 1  # seconds between history calls
@@ -26,7 +36,18 @@ class DataCollector:
         self.last_update_file = os.path.join(self.cache_dir, "last_update.json")
         self.bad_file = os.path.join(self.cache_dir, "unsupported.json")
         ensure_cache_dir()
-        
+
+        # Optional Finnhub integration (for fundamental *bulk* API calls)
+        self._finnhub = None
+        if FinnhubCollector is not None:
+            try:
+                self._finnhub = FinnhubCollector()
+                print("📡 Finnhub integration enabled – using it for fundamentals.")
+            except Exception as e:
+                # Non-fatal – we fall back to yahoo-only if key missing
+                print(f"⚠️  Finnhub disabled: {e}")
+                self._finnhub = None
+
         # load previously identified bad tickers
         self.bad_tickers = self._load_bad_tickers()
     
@@ -86,12 +107,25 @@ class DataCollector:
                 # yahooquery sometimes returns a string like "No summary detail found"
                 raw_summary = stock.summary_detail.get(cleaned_ticker, {})
                 raw_price   = stock.price.get(cleaned_ticker, {})
+                # ENHANCED: Fetch additional data sources for comprehensive metrics
+                raw_financial = stock.financial_data.get(cleaned_ticker, {})
+                raw_stats = stock.key_stats.get(cleaned_ticker, {})
+                raw_profile = stock.asset_profile.get(cleaned_ticker, {})
 
                 summary = raw_summary if isinstance(raw_summary, dict) else {}
                 price_info = raw_price if isinstance(raw_price, dict) else {}
+                financial_info = raw_financial if isinstance(raw_financial, dict) else {}
+                stats_info = raw_stats if isinstance(raw_stats, dict) else {}
+                profile_info = raw_profile if isinstance(raw_profile, dict) else {}
 
-                # Merge into single dict for convenience
-                info = {**summary, **price_info}
+                # ENHANCED: Merge all data sources for comprehensive information
+                info = {
+                    **summary,
+                    **price_info,
+                    **financial_info,
+                    **stats_info,
+                    **profile_info,
+                }
 
                 # Required: price & market cap > 0
                 if (
@@ -194,6 +228,9 @@ class DataCollector:
                 price_map = bulk_tkr.price
                 summary_map = bulk_tkr.summary_detail or {}
                 stats_map = bulk_tkr.key_stats or {}
+                # ENHANCED: Fetch additional data sources for comprehensive metrics
+                financial_map = bulk_tkr.financial_data or {}
+                profile_map = bulk_tkr.asset_profile or {}
             except Exception as e:
                 print(f"Bulk price request failed ({e}). Retrying after 15 s…", flush=True)
                 time.sleep(15)
@@ -203,6 +240,9 @@ class DataCollector:
                     price_map = bulk_tkr.price
                     summary_map = bulk_tkr.summary_detail or {}
                     stats_map = bulk_tkr.key_stats or {}
+                    # ENHANCED: Retry with additional data sources
+                    financial_map = bulk_tkr.financial_data or {}
+                    profile_map = bulk_tkr.asset_profile or {}
                 except Exception as e:
                     print(f"Bulk price retry failed – skipping this batch. ({e})", flush=True)
                     # Mark all tickers as bad to avoid infinite loops
@@ -213,10 +253,33 @@ class DataCollector:
             # iterate batch, build info dict, drop the obvious failures
             survivors = []
             for symbol in batch:
+                # Safely handle API responses that might be strings instead of dicts
+                summary_data = summary_map.get(symbol, {})
+                stats_data = stats_map.get(symbol, {})
+                price_data = price_map.get(symbol, {})
+                # ENHANCED: Include additional data sources
+                financial_data = financial_map.get(symbol, {})
+                profile_data = profile_map.get(symbol, {})
+                
+                # Ensure all data sources are dicts before unpacking
+                if not isinstance(summary_data, dict):
+                    summary_data = {}
+                if not isinstance(stats_data, dict):
+                    stats_data = {}
+                if not isinstance(price_data, dict):
+                    price_data = {}
+                if not isinstance(financial_data, dict):
+                    financial_data = {}
+                if not isinstance(profile_data, dict):
+                    profile_data = {}
+                
+                # ENHANCED: Merge all data sources for comprehensive information
                 info = {
-                    **summary_map.get(symbol, {}),
-                    **stats_map.get(symbol, {}),
-                    **(price_map.get(symbol, {}) or {}),
+                    **summary_data,
+                    **stats_data,
+                    **price_data,
+                    **financial_data,
+                    **profile_data,
                 }
                 ok = (
                     info.get("regularMarketPrice", 0) > 0
@@ -241,8 +304,15 @@ class DataCollector:
                     drop_str = f"{pct_below:5.1f}%"
                 else:
                     drop_str = " n/a "
+                
+                # ENHANCED: Show additional key metrics in progress display
+                fcf = info.get("freeCashflow")
+                pe = info.get("trailingPE")
+                fcf_str = f"FCF:{fcf/1e6:.0f}M" if isinstance(fcf, (int, float)) and fcf else "FCF:n/a"
+                pe_str = f"PE:{pe:.1f}" if isinstance(pe, (int, float)) and pe else "PE:n/a"
+                
                 print(
-                    f"    🌐 [API] [{idx}/{len(survivors)}] {symbol:<6} | Price {price_str:<8} | 52W Hi {hi_str:<8} | Δ {drop_str:<6} | Cap {cap_str:<6} -> history…",
+                    f"    🌐 [API] [{idx}/{len(survivors)}] {symbol:<6} | Price {price_str:<8} | 52W Hi {hi_str:<8} | Δ {drop_str:<6} | Cap {cap_str:<6} | {fcf_str:<10} | {pe_str:<8} -> history…",
                     end="",
                     flush=True,
                 )
@@ -420,16 +490,20 @@ class DataCollector:
         return scores
     
     def calculate_score(self, record):
-        """Wrap utils.calculate_score with fundamentals dict."""
+        """Enhanced scoring using Phase 2 layered scoring engine."""
         try:
+            # Build DataFrame from historical data with proper index
             df = pd.DataFrame(
                 {
                     "Close": record["historical_data"]["close"],
                     "Volume": record["historical_data"]["volume"],
                     "High": record["historical_data"]["high"],
                     "Low": record["historical_data"]["low"],
-                }
+                },
+                index=pd.to_datetime(record["historical_data"]["dates"])
             )
+            
+            # Prepare fundamentals dict
             fundamentals = {
                 k: record.get(k)
                 for k in (
@@ -442,10 +516,111 @@ class DataCollector:
                     "insider_hold_percent",
                 )
             }
-            return calculate_score(df, fundamentals)
+
+            # Merge in any Finnhub-provided fundamentals
+            if record.get("finnhub_fundamentals"):
+                fundamentals.update(record["finnhub_fundamentals"])
+            
+            # Get original legacy score for fallback compatibility
+            try:
+                legacy_score, legacy_details = calculate_score(df, fundamentals)
+            except Exception as legacy_error:
+                print(f"Legacy scoring failed for {record.get('ticker', 'UNKNOWN')}: {legacy_error}")
+                legacy_score, legacy_details = 0, {}
+            
+            # Initialize Phase 2 layered scoring engine
+            if not hasattr(self, '_composite_scorer'):
+                from scoring.composite_scorer import CompositeScorer
+                self._composite_scorer = CompositeScorer()
+            
+            # Calculate comprehensive layered score
+            ticker = record.get('ticker', 'UNKNOWN')
+            try:
+                # Create pre-computed data structure for enhanced scoring
+                pre_computed_data = {
+                    'fundamentals': fundamentals,
+                    'ticker_data': record,  # Pass the full record for access to all fields
+                    'current_price': record.get('current_price'),
+                    'market_cap': record.get('market_cap'),
+                    'avg_volume': record.get('avg_volume'),
+                    'year_high': record.get('year_high'),
+                    'year_low': record.get('year_low'),
+                    'exchange': record.get('exchange')
+                }
+                
+                layered_score, layered_details = self._composite_scorer.calculate_composite_score(
+                    df, ticker, pre_computed_data
+                )
+                
+                # Ensure layered_score is a number, not a tuple
+                if isinstance(layered_score, tuple):
+                    layered_score = layered_score[0] if len(layered_score) > 0 else 0
+                    
+            except Exception as layered_error:
+                print(f"Enhanced scoring failed for {ticker}: {layered_error}")
+                # Use legacy score as fallback
+                layered_score = legacy_score
+                layered_details = {
+                    'error': str(layered_error),
+                    'fallback': 'legacy_scoring_used',
+                    'layer_scores': {'quality_gate': 0, 'dip_signal': 0, 'reversal_spark': 0, 'risk_adjustment': 0},
+                    'overall_grade': 'F',
+                    'investment_recommendation': {'action': 'AVOID', 'confidence': 'high', 'reason': 'Enhanced scoring error'}
+                }
+            
+            # Create enhanced score details combining both approaches
+            enhanced_details = {
+                'legacy_score': legacy_score,
+                'legacy_details': legacy_details,
+                'layered_score': layered_score,
+                'layered_details': layered_details,
+                'methodology_compliance': layered_details.get('methodology_compliance', {}),
+                'investment_recommendation': layered_details.get('investment_recommendation', {}),
+                'overall_grade': layered_details.get('overall_grade', 'F'),
+                'layer_scores': layered_details.get('layer_scores', {}),
+                'enhanced_available': isinstance(layered_details, dict) and 'layer_scores' in layered_details
+            }
+            
+            # Return the layered score as the primary score (it includes all methodology)
+            # Keep legacy score for comparison/fallback
+            final_score = max(layered_score, 0)
+            
+            return final_score, enhanced_details
+            
         except Exception as e:
-            print("Error calculating score:", e)
-            return 0, {}
+            print(f"Error calculating enhanced score for {record.get('ticker', 'UNKNOWN')}: {e}")
+            # Fallback to original scoring if enhancement fails
+            try:
+                df = pd.DataFrame(
+                    {
+                        "Close": record["historical_data"]["close"],
+                        "Volume": record["historical_data"]["volume"],
+                        "High": record["historical_data"]["high"],
+                        "Low": record["historical_data"]["low"],
+                    }
+                )
+                fundamentals = {
+                    k: record.get(k)
+                    for k in (
+                        "pe",
+                        "forward_pe",
+                        "peg",
+                        "dividend_yield",
+                        "beta",
+                        "short_percent_float",
+                        "insider_hold_percent",
+                    )
+                }
+                legacy_score, legacy_details = calculate_score(df, fundamentals)
+                return legacy_score, {
+                    'legacy_score': legacy_score,
+                    'legacy_details': legacy_details,
+                    'layered_score': 0,
+                    'error': str(e),
+                    'enhanced_available': False
+                }
+            except Exception:
+                return 0, {'error': str(e), 'enhanced_available': False}
     
     def filter_tickers(self, stock_data, 
                       min_market_cap=1e7,     # $10M (reduced from $100M)
@@ -608,17 +783,8 @@ class DataCollector:
         year_high = price_info.get("fiftyTwoWeekHigh")
         year_low = price_info.get("fiftyTwoWeekLow")
 
-        # Fallback to yfinance fast_info if not available (rare)
-        if (year_high is None or year_low is None) and ticker:
-            try:
-                import yfinance as yf
-
-                yf_ticker = yf.Ticker(ticker)
-                fi = yf_ticker.fast_info
-                year_high = year_high or fi.get("yearHigh")
-                year_low = year_low or fi.get("yearLow")
-            except Exception:
-                pass
+        # Keep year_high and year_low as None if not available from yahooquery
+        # No more yfinance fallback to maintain API consistency
 
         # Fundamental extras
         pe = price_info.get("trailingPE") or price_info.get("trailingPe")
@@ -629,14 +795,83 @@ class DataCollector:
         short_float = price_info.get("shortPercentOfFloat")
         insider_pct = price_info.get("heldPercentInsiders") or price_info.get("insiderHoldPercent")
 
-        return {
+        # ENHANCED: Additional crucial financial metrics for scoring
+        # Cash Flow & Financial Strength metrics (crucial for Quality Gate)
+        free_cash_flow = price_info.get("freeCashflow")
+        operating_cash_flow = price_info.get("operatingCashflow")
+        total_cash = price_info.get("totalCash")
+        total_debt = price_info.get("totalDebt")
+        ebitda = price_info.get("ebitda")
+        
+        # Profitability metrics (important for Quality Gate)
+        gross_margins = price_info.get("grossMargins")
+        operating_margins = price_info.get("operatingMargins")
+        profit_margins = price_info.get("profitMargins")
+        return_on_equity = price_info.get("returnOnEquity")
+        return_on_assets = price_info.get("returnOnAssets")
+        
+        # Growth metrics (Quality Gate scoring)
+        revenue_growth = price_info.get("revenueGrowth")
+        earnings_growth = price_info.get("earningsGrowth")
+        
+        # Additional valuation metrics
+        price_to_book = price_info.get("priceToBook")
+        price_to_sales = price_info.get("priceToSalesTrailing12Months")
+        enterprise_value = price_info.get("enterpriseValue")
+        
+        # Financial ratios for risk assessment
+        debt_to_equity = price_info.get("debtToEquity")
+        current_ratio = price_info.get("currentRatio")
+        quick_ratio = price_info.get("quickRatio")
+        
+        # Market & trading metrics
+        shares_outstanding = price_info.get("sharesOutstanding")
+        float_shares = price_info.get("floatShares")
+        avg_daily_volume = price_info.get("averageDailyVolume10Day")
+        
+        # Dividend & payout information
+        payout_ratio = price_info.get("payoutRatio")
+        dividend_rate = price_info.get("dividendRate")
+        ex_dividend_date = price_info.get("exDividendDate")
+        
+        # Business information (useful for sector analysis)
+        sector = price_info.get("sector", "")
+        industry = price_info.get("industry", "")
+        
+        # Calculate derived metrics for immediate use
+        current_price = price_info["regularMarketPrice"]
+        
+        # % below 52-week high (crucial for dip detection)
+        pct_below_52w_high = None
+        if year_high and current_price:
+            pct_below_52w_high = ((year_high - current_price) / year_high) * 100
+        
+        # Position in 52-week range (0 = at low, 1 = at high)
+        range_position = None
+        if year_high and year_low and current_price:
+            if year_high > year_low:
+                range_position = (current_price - year_low) / (year_high - year_low)
+        
+        # Free Cash Flow yield (if available)
+        fcf_yield = None
+        if free_cash_flow and market_cap and market_cap > 0:
+            fcf_yield = free_cash_flow / market_cap
+        
+        # Debt to EBITDA ratio (key risk metric)
+        debt_to_ebitda = None
+        if total_debt and ebitda and ebitda > 0:
+            debt_to_ebitda = total_debt / ebitda
+
+        record = {
             "ticker": ticker,
-            "current_price": price_info["regularMarketPrice"],
+            "current_price": current_price,
             "avg_volume": avg_volume,
             "market_cap": market_cap,
             "exchange": exchange,
             "year_high": year_high,
             "year_low": year_low,
+            
+            # Existing fundamental metrics
             "pe": pe,
             "forward_pe": fwd_pe,
             "peg": peg,
@@ -644,6 +879,55 @@ class DataCollector:
             "beta": beta,
             "short_percent_float": short_float,
             "insider_hold_percent": insider_pct,
+            
+            # ENHANCED: Cash Flow & Financial Strength
+            "free_cash_flow": free_cash_flow,
+            "operating_cash_flow": operating_cash_flow,
+            "total_cash": total_cash,
+            "total_debt": total_debt,
+            "ebitda": ebitda,
+            
+            # ENHANCED: Profitability metrics
+            "gross_margins": gross_margins,
+            "operating_margins": operating_margins,
+            "profit_margins": profit_margins,
+            "return_on_equity": return_on_equity,
+            "return_on_assets": return_on_assets,
+            
+            # ENHANCED: Growth metrics
+            "revenue_growth": revenue_growth,
+            "earnings_growth": earnings_growth,
+            
+            # ENHANCED: Additional valuation metrics
+            "price_to_book": price_to_book,
+            "price_to_sales": price_to_sales,
+            "enterprise_value": enterprise_value,
+            
+            # ENHANCED: Financial ratios
+            "debt_to_equity": debt_to_equity,
+            "current_ratio": current_ratio,
+            "quick_ratio": quick_ratio,
+            
+            # ENHANCED: Market & trading metrics
+            "shares_outstanding": shares_outstanding,
+            "float_shares": float_shares,
+            "avg_daily_volume": avg_daily_volume,
+            
+            # ENHANCED: Dividend information
+            "payout_ratio": payout_ratio,
+            "dividend_rate": dividend_rate,
+            "ex_dividend_date": ex_dividend_date,
+            
+            # ENHANCED: Business classification
+            "sector": sector,
+            "industry": industry,
+            
+            # ENHANCED: Calculated derived metrics
+            "pct_below_52w_high": pct_below_52w_high,
+            "range_position": range_position,
+            "fcf_yield": fcf_yield,
+            "debt_to_ebitda": debt_to_ebitda,
+            
             "historical_data": {
                 "close": hist_df["Close"].tolist(),
                 "volume": hist_df["Volume"].tolist(),
@@ -652,6 +936,17 @@ class DataCollector:
                 "dates": hist_df.index.strftime("%Y-%m-%d").tolist(),
             },
         }
+
+        # --- Optional Finnhub fundamentals ---------------------------------
+        if self._finnhub is not None:
+            try:
+                fundamentals = self._finnhub.get_stock_snapshot(ticker)
+                if fundamentals:
+                    record["finnhub_fundamentals"] = fundamentals
+            except Exception as e:
+                print(f"⚠️  Finnhub fundamentals fetch failed for {ticker}: {e}")
+
+        return record
 
     def _save_by_exchange(self, data, out_dir="cache/exchanges"):
         """Save interim stock data split by exchange for easier inspection/resume."""
@@ -707,6 +1002,19 @@ class DataCollector:
             self.update_daily_scores(tickers)
 
         return tickers
+
+    # ------------------------------------------------------------------
+    # Compatibility alias (CLI deep_analyze expects collect_batch)
+    # ------------------------------------------------------------------
+    def collect_batch(self, tickers):
+        """Alias for :py:meth:`process_ticker_batch` kept for backward-compatibility.
+
+        The CLI's Tier-3 deep-analysis step still calls ``collect_batch``.
+        To avoid breaking existing workflows we simply forward the call
+        here. Any return value from ``process_ticker_batch`` is propagated
+        unchanged.
+        """
+        return self.process_ticker_batch(tickers)
 
 if __name__ == "__main__":
     collector = DataCollector()

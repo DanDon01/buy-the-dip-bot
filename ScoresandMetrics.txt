@@ -1,0 +1,164 @@
+🎯 Essential Metrics for Dip-Hunting Greatness
+Here’s your hitlist of indicators to filter the fallen angels from the trash fires:
+
+1. % Below 52-Week High
+🟢 Great for: Identifying stocks off their recent highs.
+
+✳️ Sweet spot: 15%–40% drop — enough to be oversold, not enough to signal death.
+
+2. RSI (Relative Strength Index)
+🟢 Great for: Short-term exhaustion.
+
+✳️ Look for RSI < 30 (ideally RSI(5) or RSI(14)) — often signals capitulation.
+
+🔍 Optional: RSI divergence vs price can show hidden reversal setups.
+
+3. Volume Spike
+🟢 Great for: Detecting shakeouts or forced selling.
+
+✳️ A recent 1.5x–3x volume burst vs average can suggest final panic selling or institutional activity.
+
+4. Price vs Moving Averages
+🟢 Great for: Trend positioning.
+
+✳️ Dipping just below the 50-day or 200-day SMA may suggest temporary weakness.
+
+✅ Reclaiming moving averages is often the first sign of a bounce.
+
+5. MACD Bullish Cross
+🟢 Great for: Momentum shifts.
+
+✳️ A recent MACD crossover after a decline often precedes short- to mid-term bounces.
+
+6. Low P/E (but not too low)
+🟢 Great for: Screening out overhyped junk.
+
+✳️ Look for P/E below sector average, but not sub-5 unless it's a dividend play.
+
+7. High Free Cash Flow (FCF) or Positive Earnings Growth
+🟢 Great for: Underlying business quality.
+
+✳️ You want to dip-buy quality — not flaming debt piles.
+
+8. Low Short Float
+🟢 Great for: Avoiding meme-chop.
+
+✳️ Under 5–10% is safe. High short float = risk of crowding or manipulation.
+
+9. Insider Buying
+🟢 Great for: Confidence signals.
+
+✳️ If execs are buying while prices are down = 🚨green flag.
+
+10. Sector Context
+🟢 Great for: Macro backdrop.
+
+✳️ If the whole sector dipped (e.g. tech sell-off), the good ones rebound first.
+
+🧠 Bonus Signs It’s a Dip, Not a Dumpster:
+🔄 Recent downtrend slowing (smaller red candles, tighter ranges)
+
+💬 No disastrous news — just rotation or profit-taking
+
+📈 Long-term uptrend still intact on the weekly chart
+
+💼 Analyst upgrades during the dip
+
+🗺️ A roadmap for turning those metrics into a “cream-skimming” score
+Layer	Purpose	Typical Weighting*	What you’re really asking
+1. Quality Gate	Weed out garbage before you even think about momentum	30–40 % of final score	“Is this a business I’d want to own at any price?”
+2. Dip Signal	Measure how far and how fast it’s fallen	40–50 %	“Is this a temporary bruise or a structural break?”
+3. Reversal Spark	Detect the first hints of a turn-up	10–20 %	“Is the selling pressure exhausting and buying pressure emerging?”
+4. Risk/Context Mods	Adjust for sector, liquidity, macro noise	-10 % → +10 %	“Should I nudge this up or down given the backdrop?”
+
+*Use these as starting ranges—tweak in back-tests.
+
+1️⃣ Quality Gate (worth ~⅓ of the pie)
+Metric	Why it matters	Suggested rule of thumb
+Positive free-cash-flow trend	Cash keeps the lights on	Must be positive YoY or ≥ sector median
+Reasonable P/E / PEG	Overpriced “dips” often keep dipping	P/E < sector × 1.2 and PEG < 2
+Debt / EBITDA	High leverage = shaky rebounds	Ideally < 3
+Insider / buy-back activity	Skin-in-the-game confidence	Neutral → + bonus points if recent insider buys
+
+👟 If a stock fails two quality checks, boot it before scoring the dip.
+
+2️⃣ Dip Signal (the meat, ~½ of score)
+Metric	Scoring idea	Sweet zone
+% below 52-week high	Map 10 %→0 pts, 45 %→max pts	20–40 % drop
+RSI(14)	Linear inverse scale 40→0 pts, 25→max pts	25–35
+Volume spike	1×avg→0 pts, 2.5×avg→max pts	1.5–3×
+SMA crossover	Price < SMA50 but > SMA200 gets bonus	Tells you “temporary pullback”
+
+Weight these so none single-handedly dominates—e.g. 15 pts each, capped at 45 total.
+
+3️⃣ Reversal Spark (momentum clues, ~⅕)
+Trigger	Points	Rationale
+MACD bullish cross in last 5 days	+5	Early momentum shift
+Hammer / pin-bar candle within last 3 sessions	+5	Exhaustion wick
+Positive earnings surprise during dip	+5	Fresh catalyst
+
+(Give zero if the opposite trigger appears.)
+
+4️⃣ Risk / Context Mods
+Modifier	Adjustment
+Sector is already in confirmed up-swing	×1.1 multiplier
+High short float (>15 %)	−5 pts
+Beta > 2 and VIX > 20	−5 pts
+Fed decision week, earnings in < 3 days	−TEMPORARILY exclude
+
+These keep you from “accidentally” filling the list with meme-stocks or macro-trap setups.
+
+🔧 Tuning methodology
+Historical back-test
+
+Apply the scoring model to past data (e.g. 2020-2024).
+
+Record 1- and 3-month forward returns of top 20 scorers.
+
+Adjust weights until the top bucket beats SPX by X %.
+
+Walk-forward validation
+
+Re-run monthly on unseen months; watch hit-rate and draw-downs.
+
+Aim for >60 % winners and max 10 % worst-case drop.
+
+Regular Kaizen
+
+Every quarter, retune: sectors rotate, macro shifts, what “dip” means evolves.
+
+Keep a changelog so you know why a weight was altered.
+
+Human sanity check
+
+Glance at the leaderboard: if perennial zombies show up, tighten quality gate.
+
+If only mega-caps appear, relax the market-cap floor or volume filter.
+
+🏁 Practical rule-of-thumb weights to start
+Layer	Points out of 100
+Quality Gate	30
+Dip Signal	45
+Reversal Spark	15
+Risk Mods	±10
+
+Sources for metrics:
+
+Metric,How to Calculate / Detect,How to Get
+Positive Free Cash Flow,Check cash flow statements,Yahoo Finance API (fundamentals)
+P/E Ratio,Direct metric,Yahoo Finance API (summary detail)
+PEG Ratio,Direct metric,Yahoo Finance API (summary detail)
+Debt/EBITDA,Calculate: Total Debt / EBITDA,Yahoo Finance or Finbox API
+Insider Buying,Parse recent insider trades,"Finviz, MarketBeat, or Yahoo News scraping"
+% Below 52-Week High,Calculate: (Current Price - 52W High) / 52W High,Yahoo Finance API (summary)
+RSI(14),Technical indicator calculation,Calculate from historical data via yfinance
+Volume Spike,Compare current volume to 30-day average,Yahoo Finance historical data
+SMA Crossover,Compare SMA50 and SMA200 vs current price,Calculated using pandas + yfinance
+MACD Bullish Cross,Detect MACD line crossing signal line,Calculated using TA-lib or pandas
+Hammer / Pin-bar Candle,Candle pattern analysis,Use TA-lib on historical candles
+Positive Earnings Surprise,Compare reported vs estimated EPS,Yahoo Earnings Calendar or Finbox
+Sector Trend,Compare average sector ETF momentum,"Use sector ETFs like XLK, XLF via yfinance"
+Short Float,Direct metric,Finviz or MarketBeat API/scraping
+Beta,Direct metric,Yahoo Finance API
+VIX Level,Market sentiment,Use ^VIX ticker on Yahoo Finance
+Macro Events,Check news headlines and economic calendars,"News API, Fed calendar scraping, AI summariser"

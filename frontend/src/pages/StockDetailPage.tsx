@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import LayeredRadarChart from '../components/LayeredRadarChart';
+import InvestmentRecommendation from '../components/InvestmentRecommendation';
+import LayerBreakdown from '../components/LayerBreakdown';
 
 const StockDetailPage = () => {
   const { ticker } = useParams<{ ticker: string }>();
@@ -222,6 +225,34 @@ const StockDetailPage = () => {
         </div>
       </div>
 
+      {/* Enhanced 4-Layer Analysis */}
+      <div className="space-y-8">
+        {/* Investment Recommendation */}
+        {stock && stock.ticker && typeof stock.price === 'number' && (
+          <InvestmentRecommendation 
+            data={stock} 
+            ticker={stock.ticker} 
+            price={stock.price} 
+          />
+        )}
+        
+        {/* 4-Layer Methodology Radar Chart */}
+        {stock && stock.ticker && (
+          <LayeredRadarChart 
+            data={stock} 
+            ticker={stock.ticker} 
+          />
+        )}
+        
+        {/* Layer-by-Layer Breakdown */}
+        {stock && stock.ticker && (
+          <LayerBreakdown 
+            data={stock} 
+            ticker={stock.ticker} 
+          />
+        )}
+      </div>
+
       {/* Charts Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         {/* Price Chart */}
@@ -373,12 +404,16 @@ const StockDetailPage = () => {
                   fillOpacity={0}
                   strokeWidth={0}
                   dot={(dotProps: any) => {
-                    const { cx, cy, index } = dotProps;
-                    const color = radarColors[index % radarColors.length];
+                    const { cx = 0, cy = 0, index = 0 } = dotProps;
+                    const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0;
+                    const safeCx = typeof cx === 'number' && !isNaN(cx) ? cx : 0;
+                    const safeCy = typeof cy === 'number' && !isNaN(cy) ? cy : 0;
+                    const color = radarColors[safeIndex % radarColors.length];
                     return (
                       <circle
-                        cx={cx}
-                        cy={cy}
+                        key={`radar-dot-${safeIndex}`}
+                        cx={safeCx}
+                        cy={safeCy}
                         r={5}
                         fill={color}
                         stroke={color}
@@ -400,9 +435,16 @@ const StockDetailPage = () => {
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">
           <h2 className="text-2xl font-bold text-white mb-6">Score Breakdown</h2>
           <div className="grid grid-cols-2 gap-4">
-            {Object.entries(stock.score_details).map(([key, value]: [string, any]) => {
-              const isHighScore = value >= 0.8; // Consider 0.8+ as high score
-              const scoreColor = getScoreColor(value);
+            {Object.entries(stock.score_details)
+              .filter(([key, value]: [string, any]) => {
+                // Only show numeric values, filter out complex objects
+                return typeof value === 'number' && 
+                       !['investment_recommendation', 'layer_scores', 'layer_details', 'methodology_compliance'].includes(key);
+              })
+              .map(([key, value]: [string, any]) => {
+              const numericValue = typeof value === 'number' ? value : 0;
+              const isHighScore = numericValue >= 0.8; // Consider 0.8+ as high score
+              const scoreColor = getScoreColor(numericValue);
               const explanation = getMetricExplanation(key);
               
               return (
@@ -420,13 +462,13 @@ const StockDetailPage = () => {
                     className="text-2xl font-bold mb-3" 
                     style={{ color: scoreColor }}
                   >
-                    {value.toFixed(2)}
+                    {typeof value === 'number' ? value.toFixed(2) : (value || 'N/A')}
                   </p>
                   <div className="w-full bg-slate-600 rounded-full h-1">
                     <div 
                       className="h-1 rounded-full transition-all duration-300" 
                       style={{ 
-                        width: `${Math.min(value * 100, 100)}%`,
+                        width: `${typeof value === 'number' ? Math.min(value * 100, 100) : 0}%`,
                         backgroundColor: scoreColor
                       }}
                     ></div>

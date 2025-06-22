@@ -100,7 +100,7 @@ def load_scores(path="cache/daily_scores.json"):
         return json.load(f)
 
 def save_top_scores_to_csv(scores, top_n):
-    """Write the *top_n* highest-scoring tickers to *output/top_{n}.csv*."""
+    """Write the *top_n* highest-scoring tickers to *output/top_{n}.csv* with enhanced scoring data."""
     if not scores:
         print("No score records supplied – CSV not written.")
         return
@@ -112,12 +112,137 @@ def save_top_scores_to_csv(scores, top_n):
 
     from datetime import datetime
     date_str = datetime.now().strftime("%Y%m%d")
-    path = f"output/top_{top_n}_{date_str}.csv"
-    with open(path, "w", newline="") as f:
+    
+    # Enhanced CSV with layer breakdown
+    enhanced_path = f"output/top_{top_n}_enhanced_{date_str}.csv"
+    enhanced_fieldnames = [
+        'ticker', 'score', 'price', 'overall_grade', 'investment_action', 'confidence',
+        'quality_gate_score', 'dip_signal_score', 'reversal_spark_score', 'risk_adjustment',
+        'quality_grade', 'dip_grade', 'reversal_strength', 'dip_classification',
+        'methodology_compliance', 'pe', 'market_cap', 'avg_volume', 'drop_from_high_pct',
+        'rsi_14', 'enhanced_available', 'timestamp'
+    ]
+    
+    # Prepare enhanced data
+    enhanced_records = []
+    for record in sorted_scores:
+        enhanced_record = {
+            'ticker': record.get('ticker', ''),
+            'score': record.get('score', 0),
+            'price': record.get('price', 0),
+            'timestamp': record.get('timestamp', ''),
+            'pe': 'N/A',
+            'market_cap': 'N/A',
+            'avg_volume': 'N/A',
+            'drop_from_high_pct': 'N/A',
+            'rsi_14': 'N/A',
+            'enhanced_available': False
+        }
+        
+        # Extract enhanced scoring data if available
+        score_details = record.get('score_details', {})
+        if isinstance(score_details, dict):
+            # Check if enhanced scoring is available
+            enhanced_available = score_details.get('enhanced_available', False)
+            enhanced_record['enhanced_available'] = enhanced_available
+            
+            if enhanced_available:
+                # Extract layer scores
+                layer_scores = score_details.get('layer_scores', {})
+                enhanced_record.update({
+                    'quality_gate_score': layer_scores.get('quality_gate', 0),
+                    'dip_signal_score': layer_scores.get('dip_signal', 0),
+                    'reversal_spark_score': layer_scores.get('reversal_spark', 0),
+                    'risk_adjustment': layer_scores.get('risk_adjustment', 0),
+                    'overall_grade': score_details.get('overall_grade', 'F')
+                })
+                
+                # Extract investment recommendation
+                investment_rec = score_details.get('investment_recommendation', {})
+                enhanced_record.update({
+                    'investment_action': investment_rec.get('action', 'AVOID'),
+                    'confidence': investment_rec.get('confidence', 'unknown')
+                })
+                
+                # Extract methodology compliance
+                methodology = score_details.get('methodology_compliance', {})
+                enhanced_record.update({
+                    'methodology_compliance': methodology.get('methodology_grade', 'F'),
+                    'dip_classification': methodology.get('dip_classification', 'no_dip')
+                })
+                
+                # Extract layer details if available
+                layer_details = score_details.get('layered_details', {})
+                if isinstance(layer_details, dict):
+                    # Quality gate details
+                    quality_details = layer_details.get('layer_details', {}).get('quality_gate', {})
+                    enhanced_record['quality_grade'] = quality_details.get('quality_grade', 'F')
+                    
+                    # Dip signal details  
+                    dip_details = layer_details.get('layer_details', {}).get('dip_signal', {})
+                    enhanced_record['dip_grade'] = dip_details.get('dip_grade', 'F')
+                    
+                    # Reversal spark details
+                    reversal_details = layer_details.get('layer_details', {}).get('reversal_spark', {})
+                    enhanced_record['reversal_strength'] = reversal_details.get('reversal_strength', 'minimal')
+                    
+            else:
+                # Fall back to legacy scoring details
+                legacy_details = score_details.get('legacy_details', {})
+                enhanced_record.update({
+                    'quality_gate_score': 0,
+                    'dip_signal_score': 0,
+                    'reversal_spark_score': 0,
+                    'risk_adjustment': 0,
+                    'overall_grade': 'F',
+                    'investment_action': 'AVOID',
+                    'confidence': 'low',
+                    'methodology_compliance': 'F',
+                    'dip_classification': 'legacy_scoring'
+                })
+                
+                # Extract what we can from legacy scoring
+                if 'rsi5' in legacy_details:
+                    enhanced_record['rsi_14'] = legacy_details['rsi5']
+                if 'pe' in legacy_details:
+                    enhanced_record['pe'] = legacy_details['pe']
+        
+        enhanced_records.append(enhanced_record)
+    
+    # Write enhanced CSV
+    with open(enhanced_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=enhanced_fieldnames)
+        writer.writeheader()
+        writer.writerows(enhanced_records)
+    print(f"✅ Saved {len(enhanced_records)} enhanced records to {enhanced_path}")
+    
+    # Also create simple CSV for backward compatibility
+    simple_path = f"output/top_{top_n}_{date_str}.csv"
+    simple_fieldnames = ['ticker', 'score', 'price', 'overall_grade', 'investment_action']
+    simple_records = [
+        {
+            'ticker': record.get('ticker', ''),
+            'score': record.get('score', 0),
+            'price': record.get('price', 0),
+            'overall_grade': record.get('overall_grade', 'F'),
+            'investment_action': record.get('investment_action', 'AVOID')
+        }
+        for record in enhanced_records
+    ]
+    
+    with open(simple_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=simple_fieldnames)
+        writer.writeheader()
+        writer.writerows(simple_records)
+    print(f"✅ Saved {len(simple_records)} simple records to {simple_path}")
+
+    # Legacy CSV (original format)
+    legacy_path = f"output/top_{top_n}_scores.csv"
+    with open(legacy_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=sorted_scores[0].keys())
         writer.writeheader()
         writer.writerows(sorted_scores)
-    print(f"Saved {len(sorted_scores)} records to {path}")
+    print(f"✅ Saved {len(sorted_scores)} legacy records to {legacy_path}")
 
 def calculate_rsi(prices, period=14):
     """Calculate Relative Strength Index (RSI) for a series of prices."""
@@ -382,7 +507,10 @@ def get_stock_info(ticker):
     if cache_key in _stock_info_cache:
         cached_data = _stock_info_cache[cache_key]
         if current_time - cached_data['timestamp'] < CACHE_EXPIRY:
-            return cached_data['data']
+            data = cached_data['data'].copy()
+            data['_from_cache'] = True
+            data['_cache_age_hours'] = (current_time - cached_data['timestamp']).total_seconds() / 3600
+            return data
     
     # If not in cache or expired, fetch from API
     try:
@@ -399,7 +527,9 @@ def get_stock_info(ticker):
                 'volume': info.get('averageVolume', info.get('averageDailyVolume10Day', 0)),
                 'exchange': info.get('exchange', info.get('exchangeName', '')),
                 'sector': info.get('sector', ''),
-                'industry': info.get('industry', '')
+                'industry': info.get('industry', ''),
+                '_from_cache': False,
+                '_api_call_time': current_time.isoformat()
             }
             
             # Update cache
@@ -413,7 +543,8 @@ def get_stock_info(ticker):
                 save_cache(_stock_info_cache)
             
             return data
-    except Exception:
+    except Exception as e:
+        # Return None but log the error for debugging
         return None
 
 def filter_tickers(tickers, min_market_cap=1e8,  # $100M

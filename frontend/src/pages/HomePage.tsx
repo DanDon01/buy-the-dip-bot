@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import PerformanceMetrics from '../components/PerformanceMetrics';
 
 interface Stats {
   total_stocks: number;
@@ -49,6 +50,9 @@ const HomePage = () => {
         <h1 className="text-3xl font-bold text-white mb-2">Market Analysis Dashboard</h1>
         <p className="text-lg text-slate-400">Real-time insights and scoring for optimal dip-buying opportunities</p>
       </div>
+
+      {/* Enhanced Performance Metrics */}
+      {stats && <PerformanceMetrics data={stats} />}
 
       {/* Stats Cards */}
       {stats && (
