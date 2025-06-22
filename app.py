@@ -108,18 +108,47 @@ def load_processed_data():
 @app.route('/api/stats')
 def get_stats():
     """API endpoint for summary statistics."""
-    df = load_processed_data()
-    if df is None:
-        return jsonify({'error': 'No data available'}), 404
+    try:
+        df = load_processed_data()
+        if df is None or len(df) == 0:
+            return jsonify({'error': 'No data available'}), 404
         
-    stats = {
-        'total_stocks': len(df),
-        'avg_score': float(df['score'].mean()),
-        'top_scorer': df.iloc[0]['ticker'],
-        'top_score': float(df.iloc[0]['score']),
-        'last_update': pd.to_datetime(df['timestamp']).max().strftime('%Y-%m-%d %H:%M')
-    }
-    return jsonify(stats)
+        # Clean and validate data before processing
+        avg_score = df['score'].mean()
+        avg_score = 0.0 if pd.isna(avg_score) else float(avg_score)
+        
+        top_score = df.iloc[0]['score']
+        top_score = 0.0 if pd.isna(top_score) else float(top_score)
+        
+        # Handle timestamp parsing safely
+        try:
+            last_update = pd.to_datetime(df['timestamp']).max().strftime('%Y-%m-%d %H:%M')
+        except:
+            last_update = datetime.now().strftime('%Y-%m-%d %H:%M')
+            
+        stats = {
+            'total_stocks': len(df),
+            'avg_score': avg_score,
+            'top_scorer': str(df.iloc[0]['ticker']),
+            'top_score': top_score,
+            'last_update': last_update
+        }
+        
+        # Clean the stats to ensure JSON serialization
+        cleaned_stats = clean_data_for_json(stats)
+        return jsonify(cleaned_stats)
+        
+    except Exception as e:
+        print(f"❌ Error in get_stats: {e}")
+        # Return a fallback response instead of crashing
+        return jsonify({
+            'total_stocks': 0,
+            'avg_score': 0.0,
+            'top_scorer': 'N/A',
+            'top_score': 0.0,
+            'last_update': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'error': 'Stats temporarily unavailable'
+        }), 200
 
 @app.route('/api/stocks')
 def get_stocks():
@@ -219,7 +248,10 @@ def get_stock_detail(ticker):
     except Exception as e:
         print(f"❌ Error loading enhanced data for {ticker}: {e}")
     
-    return jsonify(stock_record)
+    # Clean the data to prevent NaN JSON serialization errors
+    cleaned_record = clean_data_for_json(stock_record)
+    
+    return jsonify(cleaned_record)
 
 def _to_native_py_type(val):
     """Converts numpy types to native Python types for JSON serialization."""

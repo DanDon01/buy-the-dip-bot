@@ -8,35 +8,42 @@ interface LayeredScoreData {
     reversal_spark?: number;
     risk_adjustment?: number;
   };
-  layer_details?: {
+  calculation_details?: {
     quality_gate?: {
-      quality_grade?: string;
-      passes_quality_gate?: boolean;
-      quality_score?: number;
-      financial_strength?: number;
-      valuation_score?: number;
+      pe_ratio_check?: { value: number; passes: boolean; points: number };
+      market_cap_tier?: { value: string; points: number };
+      dividend_bonus?: { yield: number; points: number };
+      financial_strength?: { debt_ratio: number; points: number };
+      overall_pass?: boolean;
     };
     dip_signal?: {
-      dip_grade?: string;
-      dip_classification?: string;
-      drop_severity_score?: number;
-      rsi_oversold_score?: number;
-      volume_signature_score?: number;
-      sma_positioning_score?: number;
+      pct_drop_from_high?: { value: number; points: number };
+      rsi_oversold?: { value: number; points: number };
+      volume_surge?: { multiplier: number; points: number };
+      ma_position?: { below_ma: boolean; points: number };
     };
     reversal_spark?: {
-      reversal_grade?: string;
-      reversal_strength?: string;
-      total_signals?: number;
+      momentum_indicators?: { macd: string; rsi: string; points: number };
+      beta_analysis?: { beta: number; points: number };
+      volatility_score?: { value: number; points: number };
     };
     risk_modifiers?: {
-      risk_level?: string;
-      market_regime?: string;
-      total_risk_adjustment?: number;
+      market_cap_safety?: { tier: string; adjustment: number };
+      dividend_protection?: { yield: number; adjustment: number };
+      sector_momentum?: { score: number; adjustment: number };
     };
   };
   overall_grade?: string;
   score?: number;
+  // Additional stock data for meaningful metrics
+  market_cap?: number;
+  price?: number;
+  pct_below_52w_high?: number;
+  dividend_yield?: number;
+  pe_ratio?: number;
+  debt_to_equity?: number;
+  current_ratio?: number;
+  beta?: number;
 }
 
 interface LayeredRadarChartProps {
@@ -45,43 +52,70 @@ interface LayeredRadarChartProps {
 }
 
 const LayeredRadarChart: React.FC<LayeredRadarChartProps> = ({ data, ticker }) => {
-  // Prepare radar chart data for the 4-layer methodology
+  // Create radar chart data focusing on key dip-deciding factors with better fallback calculations
   const radarData = [
     {
-      layer: 'Quality Gate',
-      score: data.layer_scores?.quality_gate || 0,
-      maxScore: 35,
-      percentage: ((data.layer_scores?.quality_gate || 0) / 35) * 100,
-      grade: data.layer_details?.quality_gate?.quality_grade || 'F',
-      color: '#3b82f6', // Blue
-      description: 'Business Quality Filter'
+      factor: 'Dip Depth',
+      score: Math.max(Math.min((data.pct_below_52w_high || 0), 50) * 2, 10), // Minimum 10% for any stock
+      rawValue: `${(data.pct_below_52w_high || 0).toFixed(1)}%`,
+      color: '#ef4444',
+      description: 'How far the stock has dropped from its 52-week high'
     },
     {
-      layer: 'Dip Signal',
-      score: data.layer_scores?.dip_signal || 0,
-      maxScore: 45,
-      percentage: ((data.layer_scores?.dip_signal || 0) / 45) * 100,
-      grade: data.layer_details?.dip_signal?.dip_grade || 'F',
-      color: '#ef4444', // Red
-      description: 'Core Dip Detection'
+      factor: 'Value Score',
+      score: data.pe_ratio ? 
+        Math.max(Math.min((25 / data.pe_ratio) * 100, 100), 20) : 50, // Better P/E calculation with fallback
+      rawValue: data.pe_ratio ? `P/E: ${data.pe_ratio.toFixed(1)}` : 'Moderate',
+      color: '#3b82f6',
+      description: 'Valuation attractiveness based on P/E ratio'
     },
     {
-      layer: 'Reversal Spark',
-      score: data.layer_scores?.reversal_spark || 0,
-      maxScore: 15,
-      percentage: ((data.layer_scores?.reversal_spark || 0) / 15) * 100,
-      grade: data.layer_details?.reversal_spark?.reversal_grade || 'F',
-      color: '#10b981', // Green
-      description: 'Momentum Shift Signals'
+      factor: 'Financial Health',
+      score: data.debt_to_equity ? 
+        Math.max(100 - (data.debt_to_equity * 50), 30) : 65, // Lower debt = higher score, with fallback
+      rawValue: data.debt_to_equity ? `D/E: ${data.debt_to_equity.toFixed(2)}` : 'Stable',
+      color: '#10b981',
+      description: 'Balance sheet strength and debt management'
     },
     {
-      layer: 'Risk Context',
-      score: Math.abs(data.layer_scores?.risk_adjustment || 0),
-      maxScore: 10,
-      percentage: (Math.abs(data.layer_scores?.risk_adjustment || 0) / 10) * 100,
-      grade: data.layer_details?.risk_modifiers?.risk_level || 'neutral',
-      color: '#f59e0b', // Amber
-      description: 'Market Context Adjustment'
+      factor: 'Momentum',
+      score: data.layer_scores?.reversal_spark ? 
+        (data.layer_scores.reversal_spark / 15) * 100 : 45, // Use actual reversal spark score with fallback
+      rawValue: data.layer_scores?.reversal_spark ? 
+        `${data.layer_scores.reversal_spark.toFixed(1)}/15` : 'Building',
+      color: '#8b5cf6',
+      description: 'Technical momentum signals for reversal potential'
+    },
+    {
+      factor: 'Market Cap Safety',
+      score: data.market_cap ? 
+        Math.min(Math.log10(data.market_cap / 1_000_000_000) * 20 + 60, 100) : 70, // Improved calculation
+      rawValue: data.market_cap ? `$${(data.market_cap / 1_000_000_000).toFixed(1)}B` : 'Large Cap',
+      color: '#f59e0b',
+      description: 'Company size and stability factor'
+    },
+    {
+      factor: 'Dividend Shield',
+      score: data.dividend_yield ? 
+        Math.min((data.dividend_yield * 100) * 15, 90) : 20, // Adjusted calculation, some fallback
+      rawValue: data.dividend_yield ? `${(data.dividend_yield * 100).toFixed(2)}%` : 'Growth Focus',
+      color: '#06b6d4',
+      description: 'Dividend yield providing downside protection'
+    },
+    {
+      factor: 'Volatility Risk',
+      score: data.beta ? 
+        Math.max(Math.min(120 - (data.beta * 40), 100), 20) : 60, // Improved beta calculation
+      rawValue: data.beta ? `β: ${data.beta.toFixed(2)}` : 'Market Level',
+      color: '#f97316',
+      description: 'Stock volatility relative to market'
+    },
+    {
+      factor: 'Technical Setup',
+      score: Math.max((data.layer_scores?.dip_signal || 0) / 45 * 100, 25), // Minimum 25% for any setup
+      rawValue: `${(data.layer_scores?.dip_signal || 11).toFixed(1)}/45`,
+      color: '#ec4899',
+      description: 'Overall technical dip signal strength'
     }
   ];
 
@@ -90,11 +124,10 @@ const LayeredRadarChart: React.FC<LayeredRadarChartProps> = ({ data, ticker }) =
       const data = payload[0].payload;
       return (
         <div className="bg-slate-800 border border-slate-600 rounded-lg p-3 shadow-lg">
-          <p className="text-white font-semibold">{data.layer}</p>
+          <p className="text-white font-semibold">{data.factor}</p>
           <p className="text-slate-300">{data.description}</p>
-          <p className="text-blue-400">Score: {data.score.toFixed(1)}/{data.maxScore}</p>
-          <p className="text-green-400">Grade: {data.grade}</p>
-          <p className="text-amber-400">Performance: {data.percentage.toFixed(1)}%</p>
+          <p className="text-blue-400">Score: {data.score.toFixed(1)}/100</p>
+          <p className="text-green-400">Value: {data.rawValue}</p>
         </div>
       );
     }
@@ -120,18 +153,17 @@ const LayeredRadarChart: React.FC<LayeredRadarChartProps> = ({ data, ticker }) =
     return gradeColors[grade] || 'text-slate-400';
   };
 
-  const getLayerStatusIcon = (score: number, maxScore: number, grade: string) => {
-    const percentage = (score / maxScore) * 100;
-    if (percentage >= 80) return '🟢';
-    if (percentage >= 60) return '🟡';
-    if (percentage >= 40) return '🟠';
+  const getFactorStatusIcon = (score: number) => {
+    if (score >= 80) return '🟢';
+    if (score >= 60) return '🟡';
+    if (score >= 40) return '🟠';
     return '🔴';
   };
 
   return (
     <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold text-white">4-Layer Methodology Analysis</h3>
+        <h3 className="text-xl font-bold text-white">Dip Analysis Radar</h3>
         <div className="text-right">
           <div className="text-sm text-slate-400">Overall Grade</div>
           <div className={`text-2xl font-bold ${getOverallGradeColor(data.overall_grade || 'F')}`}>
@@ -148,8 +180,8 @@ const LayeredRadarChart: React.FC<LayeredRadarChartProps> = ({ data, ticker }) =
             <RadarChart data={radarData}>
               <PolarGrid stroke="#475569" />
               <PolarAngleAxis 
-                dataKey="layer" 
-                tick={{ fill: '#cbd5e1', fontSize: 12 }}
+                dataKey="factor" 
+                tick={{ fill: '#cbd5e1', fontSize: 11 }}
               />
               <PolarRadiusAxis
                 angle={90}
@@ -158,88 +190,120 @@ const LayeredRadarChart: React.FC<LayeredRadarChartProps> = ({ data, ticker }) =
                 tickCount={5}
               />
               <Radar
-                name="Performance %"
-                dataKey="percentage"
+                name="Factor Score"
+                dataKey="score"
                 stroke="#3b82f6"
                 fill="#3b82f6"
-                fillOpacity={0.3}
+                fillOpacity={0.25}
                 strokeWidth={2}
+                dot={{ r: 4, fill: '#3b82f6' }}
               />
               <Tooltip content={<CustomTooltip />} />
             </RadarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Layer Details */}
-        <div className="space-y-4">
-          {radarData.map((layer, index) => (
-            <div key={index} className="bg-slate-700 rounded-lg p-4 border border-slate-600">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <span>{getLayerStatusIcon(layer.score, layer.maxScore, layer.grade)}</span>
-                  <span className="font-semibold text-white">{layer.layer}</span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium text-blue-400">
-                    {layer.score.toFixed(1)}/{layer.maxScore}
+        {/* Simple Grid Cards */}
+        <div className="h-80">
+          <div className="grid grid-cols-2 gap-2 h-full">
+            {radarData.map((factor, index) => (
+              <div key={index} className="bg-slate-700 rounded-lg p-2 border border-slate-600 hover:border-slate-500 transition-colors">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs">{getFactorStatusIcon(factor.score)}</span>
+                    <span className="text-xs font-medium text-white truncate">{factor.factor}</span>
                   </div>
-                  <div className="text-xs text-slate-400">
-                    {layer.percentage.toFixed(1)}%
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mb-2">
-                <div className="w-full bg-slate-600 rounded-full h-2">
                   <div 
-                    className="h-2 rounded-full transition-all duration-300"
+                    className="text-xs font-bold"
+                    style={{ color: factor.color }}
+                  >
+                    {factor.score.toFixed(0)}%
+                  </div>
+                </div>
+                
+                <div className="w-full bg-slate-600 rounded-full h-1 mb-1">
+                  <div 
+                    className="h-1 rounded-full transition-all duration-300"
                     style={{ 
-                      width: `${Math.min(layer.percentage, 100)}%`,
-                      backgroundColor: layer.color
+                      width: `${Math.min(factor.score, 100)}%`,
+                      backgroundColor: factor.color
                     }}
                   />
                 </div>
+                
+                <div className="text-xs text-slate-400 truncate">
+                  {factor.rawValue !== 'N/A' && factor.rawValue !== '—' ? factor.rawValue : '—'}
+                </div>
               </div>
-              
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">{layer.description}</span>
-                <span className={`font-medium ${
-                  layer.grade === 'A+' || layer.grade === 'A' ? 'text-green-400' :
-                  layer.grade === 'B+' || layer.grade === 'B' ? 'text-blue-400' :
-                  layer.grade === 'C+' || layer.grade === 'C' ? 'text-yellow-400' :
-                  layer.grade === 'D+' || layer.grade === 'D' ? 'text-orange-400' :
-                  'text-red-400'
-                }`}>
-                  Grade {layer.grade}
-                </span>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Methodology Summary */}
+      {/* Enhanced Key Insights Summary */}
       <div className="mt-6 pt-4 border-t border-slate-700">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-xs">
-          <div>
-            <div className="text-slate-400">Quality Gate</div>
-            <div className="text-blue-400 font-medium">35% Weight</div>
-            <div className="text-slate-500">Business Filter</div>
+        <h4 className="text-sm font-semibold text-slate-400 mb-4">Key Metrics Dashboard</h4>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-slate-700/50 rounded-lg p-3 text-center border border-slate-600/50">
+            <div className="text-xs text-slate-400 mb-1">Dip Opportunity</div>
+            <div className="text-lg font-bold text-red-400">
+              {(data.pct_below_52w_high || 0).toFixed(1)}%
+            </div>
+            <div className="text-xs text-slate-500">From 52W High</div>
+            <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+              <div 
+                className="h-1 bg-red-400 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min((data.pct_below_52w_high || 0) * 2, 100)}%` }}
+              />
+            </div>
           </div>
-          <div>
-            <div className="text-slate-400">Dip Signal</div>
-            <div className="text-red-400 font-medium">45% Weight</div>
-            <div className="text-slate-500">Core Detection</div>
+          
+          <div className="bg-slate-700/50 rounded-lg p-3 text-center border border-slate-600/50">
+            <div className="text-xs text-slate-400 mb-1">Value Score</div>
+            <div className="text-lg font-bold text-blue-400">
+              {data.pe_ratio ? `${data.pe_ratio.toFixed(1)}x` : 'N/A'}
+            </div>
+            <div className="text-xs text-slate-500">P/E Ratio</div>
+            <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+              <div 
+                className="h-1 bg-blue-400 rounded-full transition-all duration-300"
+                style={{ 
+                  width: data.pe_ratio ? `${Math.max(100 - (data.pe_ratio * 3), 0)}%` : '0%'
+                }}
+              />
+            </div>
           </div>
-          <div>
-            <div className="text-slate-400">Reversal Spark</div>
-            <div className="text-green-400 font-medium">15% Weight</div>
-            <div className="text-slate-500">Momentum Shift</div>
+          
+          <div className="bg-slate-700/50 rounded-lg p-3 text-center border border-slate-600/50">
+            <div className="text-xs text-slate-400 mb-1">Safety Net</div>
+            <div className="text-lg font-bold text-cyan-400">
+              {data.dividend_yield ? `${(data.dividend_yield * 100).toFixed(1)}%` : 'None'}
+            </div>
+            <div className="text-xs text-slate-500">Dividend Yield</div>
+            <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+              <div 
+                className="h-1 bg-cyan-400 rounded-full transition-all duration-300"
+                style={{ 
+                  width: data.dividend_yield ? `${Math.min((data.dividend_yield * 100) * 20, 100)}%` : '0%'
+                }}
+              />
+            </div>
           </div>
-          <div>
-            <div className="text-slate-400">Risk Context</div>
-            <div className="text-amber-400 font-medium">±10% Adj</div>
-            <div className="text-slate-500">Market Context</div>
+          
+          <div className="bg-slate-700/50 rounded-lg p-3 text-center border border-slate-600/50">
+            <div className="text-xs text-slate-400 mb-1">Market Cap</div>
+            <div className="text-lg font-bold text-amber-400">
+              {data.market_cap ? `$${(data.market_cap / 1_000_000_000).toFixed(1)}B` : 'N/A'}
+            </div>
+            <div className="text-xs text-slate-500">Company Size</div>
+            <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+              <div 
+                className="h-1 bg-amber-400 rounded-full transition-all duration-300"
+                style={{ 
+                  width: data.market_cap ? `${Math.min(Math.log10(data.market_cap / 1_000_000_000) * 25 + 25, 100)}%` : '0%'
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>

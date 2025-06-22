@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface ScoringParameters {
   // Layer Weights (total should = 100)
@@ -78,7 +79,11 @@ interface TestResult {
   };
 }
 
+type SortField = 'ticker' | 'score_change' | 'new_score' | 'new_recommendation' | 'old_score';
+type SortDirection = 'asc' | 'desc';
+
 const ScoringTuningPage: React.FC = () => {
+  const navigate = useNavigate();
   const [parameters, setParameters] = useState<ScoringParameters>({
     // Current default weights
     quality_gate_weight: 35,
@@ -118,6 +123,13 @@ const ScoringTuningPage: React.FC = () => {
   const [currentStocks, setCurrentStocks] = useState<any[]>([]);
   const [selectedTestSize, setSelectedTestSize] = useState(50);
   const [showOnlyIssues, setShowOnlyIssues] = useState(false);
+  
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>('new_score');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  
+  // Track current preset name
+  const [currentPreset, setCurrentPreset] = useState<string>('Custom Scoring');
 
   // Load current stock data on component mount
   useEffect(() => {
@@ -149,6 +161,8 @@ const ScoringTuningPage: React.FC = () => {
 
   const handleParameterChange = (key: keyof ScoringParameters, value: number) => {
     setParameters(prev => ({ ...prev, [key]: value }));
+    // Mark as custom when manually changed
+    setCurrentPreset('Custom Scoring');
   };
 
   const testNewScoring = async () => {
@@ -335,6 +349,7 @@ const ScoringTuningPage: React.FC = () => {
     };
     
     setParameters(defaultParams);
+    setCurrentPreset('Custom Scoring');
   };
 
   const loadPreset = (presetName: string) => {
@@ -642,6 +657,7 @@ const ScoringTuningPage: React.FC = () => {
     
     if (presets[presetName]) {
       setParameters(presets[presetName]);
+      setCurrentPreset(presetName);
     }
   };
 
@@ -662,7 +678,7 @@ const ScoringTuningPage: React.FC = () => {
     },
     'turnaround_recovery': {
       name: '🔄 Turnaround Recovery Plays',
-      description: 'Aggressive strategy for 40-75% drops in distressed companies showing reversal signals. High risk, high reward deep value plays.',
+      description: 'Aggressive strategy for 40-75% drops in distressed companies. High risk, high reward deep value plays.',
       examples: 'Bankruptcy recoveries, restructuring plays, cyclical bottoms',
       strengths: 'Massive upside potential, contrarian opportunities',
       risks: 'High failure rate, value traps, permanent capital loss'
@@ -727,16 +743,127 @@ const ScoringTuningPage: React.FC = () => {
     return acc;
   }, {} as Record<string, number>);
 
+  // Sorting function
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc'); // Default to desc for new field
+    }
+  };
+
+  // Sort the filtered results
+  const sortedResults = [...filteredResults].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+
+    switch (sortField) {
+      case 'ticker':
+        aValue = a.ticker;
+        bValue = b.ticker;
+        break;
+      case 'score_change':
+        aValue = a.score_change;
+        bValue = b.score_change;
+        break;
+      case 'new_score':
+        aValue = a.new_score;
+        bValue = b.new_score;
+        break;
+      case 'old_score':
+        aValue = a.old_score;
+        bValue = b.old_score;
+        break;
+      case 'new_recommendation':
+        // Sort recommendations in logical order: STRONG_BUY > BUY > WATCH > WEAK > AVOID
+        const recOrder: Record<string, number> = {
+          'STRONG_BUY': 5,
+          'BUY': 4,
+          'WATCH': 3,
+          'WEAK': 2,
+          'AVOID': 1
+        };
+        aValue = recOrder[a.new_recommendation] || 0;
+        bValue = recOrder[b.new_recommendation] || 0;
+        break;
+      default:
+        aValue = a.new_score;
+        bValue = b.new_score;
+    }
+
+    if (sortDirection === 'asc') {
+      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+    } else {
+      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+    }
+  });
+
+  // Navigation function
+  const handleStockClick = (ticker: string) => {
+    // Find the scoring result for this ticker
+    const scoringResult = sortedResults.find(result => result.ticker === ticker);
+    
+    if (scoringResult) {
+      // Navigate with scoring data and preset info
+      navigate(`/stock/${ticker}`, {
+        state: {
+          scoringData: {
+            score: scoringResult.new_score,
+            recommendation: scoringResult.new_recommendation,
+            layer_scores: scoringResult.layer_scores,
+            calculation_details: scoringResult.calculation_details,
+            fundamental_data: scoringResult.fundamental_data,
+            has_enhanced_data: scoringResult.has_enhanced_data,
+            methodology: currentPreset,
+            parameters: parameters
+          }
+        }
+      });
+    } else {
+      // Fallback to regular navigation
+      navigate(`/stock/${ticker}`);
+    }
+  };
+
+  // Get sort icon
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) return '↕️';
+    return sortDirection === 'asc' ? '⬆️' : '⬇️';
+  };
+
+  // Preset display names mapping
+  const getPresetDisplayName = (presetKey: string): string => {
+    const presetNames: Record<string, string> = {
+      'amd_growth_dips': '🚀 AMD-Style Growth Dips',
+      'value_dividend_dips': '🍔 Defensive Dividend Dips',
+      'turnaround_recovery': '🔄 Turnaround Recovery',
+      'momentum_pullback': '📈 Momentum Pullbacks',
+      'earnings_reaction_dips': '📊 Earnings Reaction Dips',
+      'market_crash_hunter': '💥 Market Crash Hunter',
+      'quality_tech_dips': '💻 Quality Tech Dips',
+      'international_deep_value': '🌍 International Deep Value',
+      'defensive_dividend_dips': '🍔 Defensive Dividend Dips',
+      'Custom Scoring': '🎯 Custom Scoring'
+    };
+    return presetNames[presetKey] || presetKey;
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <div className="mb-8">
         <div className="flex items-center space-x-3 mb-4">
           <span className="text-4xl">🎯</span>
-          <div>
+          <div className="flex-1">
             <h1 className="text-3xl font-bold text-white">Scoring Algorithm Tuner</h1>
             <p className="text-slate-400 mt-1">
               Optimize buy-the-dip scoring parameters in real-time. Current stocks: {currentStocks.length}
             </p>
+            <div className="mt-2">
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-900 text-blue-300">
+                Active Preset: {getPresetDisplayName(currentPreset)}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -1147,8 +1274,8 @@ const ScoringTuningPage: React.FC = () => {
                     Load
                   </button>
                 </div>
-                <p className="text-xs text-slate-300 mb-2">15-35% post-earnings drops in quality companies. Clear catalysts, quick recoveries.</p>
-                <div className="text-xs text-green-400">✓ Predictable patterns, clear catalysts</div>
+                <p className="text-xs text-slate-300 mb-2">15-35% post-earnings drops in quality companies. Catches market overreactions to temporary disappointments.</p>
+                <div className="text-xs text-green-400">✓ Clear catalysts, often quick recoveries</div>
                 <div className="text-xs text-red-400">⚠ Fundamental deterioration, sector rotation</div>
               </div>
 
@@ -1179,21 +1306,6 @@ const ScoringTuningPage: React.FC = () => {
                 </div>
                 <p className="text-xs text-slate-300 mb-2">Targets 25-50% drops in quality tech stocks with high P/E ratios. Perfect for Adobe, Microsoft, or Google.</p>
                 <div className="text-xs text-green-400">✓ Catches high-quality tech at discount prices</div>
-                <div className="text-xs text-red-400">⚠ May catch falling knives in growth corrections</div>
-              </div>
-
-              <div className="bg-slate-700 rounded-lg p-3 hover:bg-slate-600 transition-colors">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-white text-sm">💳 Blue Chip Pullbacks (Mastercard-style)</h3>
-                  <button
-                    onClick={() => loadPreset('blue_chip_pullbacks')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors"
-                  >
-                    Load
-                  </button>
-                </div>
-                <p className="text-xs text-slate-300 mb-2">Targets 5-20% dips in blue chip stocks with high P/E ratios. Perfect for Mastercard, Visa, or JNJ.</p>
-                <div className="text-xs text-green-400">✓ Catches high-quality blue chips at discount prices</div>
                 <div className="text-xs text-red-400">⚠ May catch falling knives in growth corrections</div>
               </div>
 
@@ -1259,7 +1371,7 @@ const ScoringTuningPage: React.FC = () => {
                 disabled={isLoading}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
               >
-                {isLoading ? '🔄 Testing...' : '🧪 Test New Scoring'}
+                {isLoading ? '🔄 Testing...' : '�� Test New Scoring'}
               </button>
               
               <button
@@ -1377,22 +1489,47 @@ const ScoringTuningPage: React.FC = () => {
               </div>
             </div>
 
-            {filteredResults.length > 0 ? (
+            {sortedResults.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-600">
-                      <th className="text-left py-2 text-slate-300">Ticker</th>
-                      <th className="text-right py-2 text-slate-300">Score Change</th>
-                      <th className="text-right py-2 text-slate-300">New Score</th>
-                      <th className="text-center py-2 text-slate-300">New Rec</th>
+                      <th 
+                        className="text-left py-2 text-slate-300 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('ticker')}
+                      >
+                        Ticker {getSortIcon('ticker')}
+                      </th>
+                      <th 
+                        className="text-right py-2 text-slate-300 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('score_change')}
+                      >
+                        Score Change {getSortIcon('score_change')}
+                      </th>
+                      <th 
+                        className="text-right py-2 text-slate-300 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('new_score')}
+                      >
+                        New Score {getSortIcon('new_score')}
+                      </th>
+                      <th 
+                        className="text-center py-2 text-slate-300 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('new_recommendation')}
+                      >
+                        New Rec {getSortIcon('new_recommendation')}
+                      </th>
                       <th className="text-center py-2 text-slate-300">Data Source</th>
                       <th className="text-center py-2 text-slate-300">Details</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredResults.slice(0, 50).map((result) => (
-                      <tr key={result.ticker} className="border-b border-slate-700 hover:bg-slate-700">
+                    {sortedResults.slice(0, 50).map((result) => (
+                      <tr 
+                        key={result.ticker} 
+                        className="border-b border-slate-700 hover:bg-slate-700 cursor-pointer transition-colors"
+                        onClick={() => handleStockClick(result.ticker)}
+                        title={`Click to view ${result.ticker} details`}
+                      >
                         <td className="py-2 text-white font-mono">{result.ticker}</td>
                         <td className="py-2 text-right">
                           <span className={`font-bold ${

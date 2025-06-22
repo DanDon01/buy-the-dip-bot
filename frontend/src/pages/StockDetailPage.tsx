@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import LayeredRadarChart from '../components/LayeredRadarChart';
 import InvestmentRecommendation from '../components/InvestmentRecommendation';
@@ -7,12 +7,16 @@ import LayerBreakdown from '../components/LayerBreakdown';
 
 const StockDetailPage = () => {
   const { ticker } = useParams<{ ticker: string }>();
+  const location = useLocation();
   const [stock, setStock] = useState<any>(null);
   const [extraDetails, setExtraDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [stockError, setStockError] = useState<string | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [isStarred, setIsStarred] = useState(false);
+  
+  // Get scoring data from navigation state (from scoring tuning page)
+  const scoringData = location.state?.scoringData;
 
   useEffect(() => {
     if (ticker) {
@@ -34,7 +38,38 @@ const StockDetailPage = () => {
             throw new Error(errData.error || 'Stock not found');
           }
           const stockData = await stockRes.json();
-          setStock(stockData);
+          
+          // Merge with scoring data if available (from scoring tuning page)
+          if (scoringData) {
+            const mergedData = {
+              ...stockData,
+              score: scoringData.score,
+              layer_scores: scoringData.layer_scores,
+              calculation_details: scoringData.calculation_details,
+              investment_recommendation: {
+                action: scoringData.recommendation,
+                confidence: 'high',
+                reason: `Scored using ${scoringData.methodology}`
+              },
+              methodology_compliance: {
+                passes_quality_gate: scoringData.layer_scores?.quality_gate > 0,
+                in_dip_sweet_spot: scoringData.layer_scores?.dip_signal > 0,
+                has_reversal_signals: scoringData.layer_scores?.reversal_spark > 0
+              },
+              overall_grade: scoringData.score >= 80 ? 'A' : 
+                           scoringData.score >= 70 ? 'B' : 
+                           scoringData.score >= 60 ? 'C' : 
+                           scoringData.score >= 40 ? 'D' : 'F',
+              enhanced_score: scoringData.score,
+              // Store the scoring methodology and parameters
+              scoring_methodology: scoringData.methodology,
+              scoring_parameters: scoringData.parameters
+            };
+            setStock(mergedData);
+            console.log('Merged stock data with scoring:', mergedData.calculation_details ? 'Has calculation details' : 'No calculation details');
+          } else {
+            setStock(stockData);
+          }
 
           try {
             const detailsRes = await fetch(`http://localhost:5001/api/stock_details/${ticker}`);
@@ -57,7 +92,7 @@ const StockDetailPage = () => {
       };
       fetchStockData();
     }
-  }, [ticker]);
+  }, [ticker, scoringData]);
 
   const toggleStar = () => {
     if (!stock) return;
@@ -70,12 +105,20 @@ const StockDetailPage = () => {
       localStorage.setItem('buyList', JSON.stringify(updated));
       setIsStarred(false);
     } else {
-      // Add to buy list
+      // Add to buy list with scoring data
       const newStock = {
         ticker: stock.ticker,
         price: stock.price,
-        score: stock.score,
-        addedDate: new Date().toISOString()
+        score: scoringData ? scoringData.score : stock.score,
+        addedDate: new Date().toISOString(),
+        // Include scoring methodology and data if available
+        ...(scoringData && {
+          scoring_methodology: scoringData.methodology,
+          layer_scores: scoringData.layer_scores,
+          recommendation: scoringData.recommendation,
+          has_enhanced_scoring: true,
+          scoring_parameters: scoringData.parameters
+        })
       };
       buyList.push(newStock);
       localStorage.setItem('buyList', JSON.stringify(buyList));
@@ -121,6 +164,28 @@ const StockDetailPage = () => {
     price: item.price,
     '52_week_high': extraDetails?.['52_week_high']
   })) || [];
+
+  // Calculate Y-axis domain to focus on price range
+  const calculateYAxisDomain = () => {
+    if (chartData.length === 0) return [0, 100];
+    
+    const prices = chartData.map((item: any) => item.price).filter((price: number) => price > 0);
+    const high52w = extraDetails?.['52_week_high'];
+    
+    if (prices.length === 0) return [0, 100];
+    
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices, high52w || 0);
+    
+    // Start Y-axis 15% below the lowest price for better focus
+    const yAxisMin = minPrice * 0.85;
+    // Add 5% padding above the highest value
+    const yAxisMax = maxPrice * 1.05;
+    
+    return [yAxisMin, yAxisMax];
+  };
+
+  const [yAxisMin, yAxisMax] = calculateYAxisDomain();
 
   // Color array for different factors
   const radarColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
@@ -199,6 +264,14 @@ const StockDetailPage = () => {
                   Score: <span className="font-semibold text-blue-400">{stock.score.toFixed(2)}</span>
                 </span>
               </div>
+              {/* Show scoring methodology if available */}
+              {scoringData && (
+                <div className="mt-3">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-900 text-purple-300">
+                    Scored using: {scoringData.methodology}
+                  </span>
+                </div>
+              )}
             </div>
             <button
               onClick={toggleStar}
@@ -266,13 +339,22 @@ const StockDetailPage = () => {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
                 <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} />
+                <YAxis 
+                  stroke="#94a3b8" 
+                  fontSize={12} 
+                  domain={[yAxisMin, yAxisMax]}
+                  tickFormatter={(value) => `$${value.toFixed(2)}`}
+                />
                 <Tooltip 
                   contentStyle={{ 
                     backgroundColor: '#1e293b', 
                     border: '1px solid #475569', 
                     borderRadius: '8px' 
-                  }} 
+                  }}
+                  formatter={(value: any, name: string) => [
+                    `$${Number(value).toFixed(2)}`,
+                    name
+                  ]}
                 />
                 <Legend wrapperStyle={{ color: '#cbd5e1' }}/>
                 <Line 
@@ -431,60 +513,151 @@ const StockDetailPage = () => {
 
       {/* Score Details and Market Details Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Score Breakdown */}
+        {/* Enhanced Score Breakdown */}
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">
-          <h2 className="text-2xl font-bold text-white mb-6">Score Breakdown</h2>
-          <div className="grid grid-cols-2 gap-4">
-            {Object.entries(stock.score_details)
-              .filter(([key, value]: [string, any]) => {
-                // Only show numeric values, filter out complex objects
-                return typeof value === 'number' && 
-                       !['investment_recommendation', 'layer_scores', 'layer_details', 'methodology_compliance'].includes(key);
-              })
-              .map(([key, value]: [string, any]) => {
-              const numericValue = typeof value === 'number' ? value : 0;
-              const isHighScore = numericValue >= 0.8; // Consider 0.8+ as high score
-              const scoreColor = getScoreColor(numericValue);
-              const explanation = getMetricExplanation(key);
-              
-              return (
-                <div 
-                  key={key} 
-                  className={`bg-slate-700 border-2 p-4 rounded-lg text-center hover:bg-slate-600 transition-all duration-300 cursor-help group relative ${
-                    isHighScore ? 'border-amber-600/60 shadow-md shadow-amber-600/10' : 'border-slate-600 hover:border-slate-500'
-                  }`}
-                  title={explanation}
-                >
-                  <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">
-                    {key.replace(/_/g, ' ')}
-                  </h3>
-                  <p 
-                    className="text-2xl font-bold mb-3" 
-                    style={{ color: scoreColor }}
-                  >
-                    {typeof value === 'number' ? value.toFixed(2) : (value || 'N/A')}
-                  </p>
-                  <div className="w-full bg-slate-600 rounded-full h-1">
-                    <div 
-                      className="h-1 rounded-full transition-all duration-300" 
-                      style={{ 
-                        width: `${typeof value === 'number' ? Math.min(value * 100, 100) : 0}%`,
-                        backgroundColor: scoreColor
-                      }}
-                    ></div>
-                  </div>
-                  
-                  {/* Tooltip */}
-                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
-                    <div className="bg-slate-900 border border-slate-600 rounded-lg p-3 text-xs text-slate-300 max-w-xs">
-                      <div className="font-semibold text-white mb-1">{key.replace(/_/g, ' ').toUpperCase()}</div>
-                      {explanation}
-                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
-                    </div>
-                  </div>
+          <h2 className="text-2xl font-bold text-white mb-6">
+            {scoringData ? 'New Scoring Results' : 'Current Score Breakdown'}
+          </h2>
+          
+          {/* Layer Scores Grid */}
+          {(scoringData?.layer_scores || stock.layer_scores) && (
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              {/* Quality Gate */}
+              <div className="bg-slate-700 border-2 border-blue-600/30 p-4 rounded-lg text-center hover:bg-slate-600 transition-all duration-300">
+                <h3 className="text-blue-400 text-sm font-medium uppercase tracking-wider mb-2">Quality Gate</h3>
+                <p className="text-2xl font-bold mb-2 text-blue-400">
+                  {((scoringData?.layer_scores?.quality_gate || stock.layer_scores?.quality_gate || 0)).toFixed(1)}
+                </p>
+                <div className="text-xs text-slate-400">/ 35 points</div>
+                <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+                  <div 
+                    className="h-1 rounded-full transition-all duration-300 bg-blue-500"
+                    style={{ 
+                      width: `${Math.min(((scoringData?.layer_scores?.quality_gate || stock.layer_scores?.quality_gate || 0) / 35) * 100, 100)}%`
+                    }}
+                  ></div>
                 </div>
-              );
-            })}
+              </div>
+
+              {/* Dip Signal */}
+              <div className="bg-slate-700 border-2 border-red-600/30 p-4 rounded-lg text-center hover:bg-slate-600 transition-all duration-300">
+                <h3 className="text-red-400 text-sm font-medium uppercase tracking-wider mb-2">Dip Signal</h3>
+                <p className="text-2xl font-bold mb-2 text-red-400">
+                  {((scoringData?.layer_scores?.dip_signal || stock.layer_scores?.dip_signal || 0)).toFixed(1)}
+                </p>
+                <div className="text-xs text-slate-400">/ 45 points</div>
+                <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+                  <div 
+                    className="h-1 rounded-full transition-all duration-300 bg-red-500"
+                    style={{ 
+                      width: `${Math.min(((scoringData?.layer_scores?.dip_signal || stock.layer_scores?.dip_signal || 0) / 45) * 100, 100)}%`
+                    }}
+                  ></div>
+                </div>
+              </div>
+
+              {/* Reversal Spark */}
+              <div className="bg-slate-700 border-2 border-green-600/30 p-4 rounded-lg text-center hover:bg-slate-600 transition-all duration-300">
+                <h3 className="text-green-400 text-sm font-medium uppercase tracking-wider mb-2">Reversal Spark</h3>
+                <p className="text-2xl font-bold mb-2 text-green-400">
+                  {((scoringData?.layer_scores?.reversal_spark || stock.layer_scores?.reversal_spark || 0)).toFixed(1)}
+                </p>
+                <div className="text-xs text-slate-400">/ 15 points</div>
+                <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+                  <div 
+                    className="h-1 rounded-full transition-all duration-300 bg-green-500"
+                    style={{ 
+                      width: `${Math.min(((scoringData?.layer_scores?.reversal_spark || stock.layer_scores?.reversal_spark || 0) / 15) * 100, 100)}%`
+                    }}
+                  ></div>
+                </div>
+              </div>
+
+              {/* Risk Adjustment */}
+              <div className="bg-slate-700 border-2 border-amber-600/30 p-4 rounded-lg text-center hover:bg-slate-600 transition-all duration-300">
+                <h3 className="text-amber-400 text-sm font-medium uppercase tracking-wider mb-2">Risk Adjustment</h3>
+                <p className="text-2xl font-bold mb-2 text-amber-400">
+                  {(scoringData?.layer_scores?.risk_adjustment || stock.layer_scores?.risk_adjustment || 0) >= 0 ? '+' : ''}
+                  {((scoringData?.layer_scores?.risk_adjustment || stock.layer_scores?.risk_adjustment || 0)).toFixed(1)}
+                </p>
+                <div className="text-xs text-slate-400">± 10 points</div>
+                <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+                  <div 
+                    className="h-1 rounded-full transition-all duration-300 bg-amber-500"
+                    style={{ 
+                      width: `${Math.min(Math.abs((scoringData?.layer_scores?.risk_adjustment || stock.layer_scores?.risk_adjustment || 0)) * 10, 100)}%`
+                    }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Key Financial Metrics */}
+          <div className="border-t border-slate-700 pt-6">
+            <h3 className="text-lg font-semibold text-white mb-4">Key Metrics</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {/* P/E Ratio */}
+              <div className="flex justify-between items-center bg-slate-700 p-3 rounded">
+                <span className="text-slate-300">P/E Ratio</span>
+                <span className={`font-bold ${
+                  stock.pe_ratio ? (stock.pe_ratio <= 20 ? 'text-green-400' : stock.pe_ratio <= 30 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
+                }`}>
+                  {stock.pe_ratio ? stock.pe_ratio.toFixed(1) : 'N/A'}
+                </span>
+              </div>
+              
+              {/* Drop from 52W High */}
+              <div className="flex justify-between items-center bg-slate-700 p-3 rounded">
+                <span className="text-slate-300">Drop from 52W High</span>
+                <span className={`font-bold ${
+                  stock.pct_below_52w_high ? (stock.pct_below_52w_high >= 20 ? 'text-green-400' : stock.pct_below_52w_high >= 10 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
+                }`}>
+                  {stock.pct_below_52w_high ? `${stock.pct_below_52w_high.toFixed(1)}%` : 'N/A'}
+                </span>
+              </div>
+
+              {/* Dividend Yield */}
+              <div className="flex justify-between items-center bg-slate-700 p-3 rounded">
+                <span className="text-slate-300">Dividend Yield</span>
+                <span className={`font-bold ${
+                  stock.dividend_yield ? (stock.dividend_yield >= 0.03 ? 'text-green-400' : stock.dividend_yield >= 0.015 ? 'text-yellow-400' : 'text-orange-400') : 'text-slate-400'
+                }`}>
+                  {stock.dividend_yield ? `${(stock.dividend_yield * 100).toFixed(2)}%` : 'None'}
+                </span>
+              </div>
+
+              {/* Beta */}
+              <div className="flex justify-between items-center bg-slate-700 p-3 rounded">
+                <span className="text-slate-300">Beta (Volatility)</span>
+                <span className={`font-bold ${
+                  stock.beta ? (stock.beta <= 1.2 ? 'text-green-400' : stock.beta <= 1.5 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
+                }`}>
+                  {stock.beta ? stock.beta.toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+              {/* Debt to Equity */}
+              <div className="flex justify-between items-center bg-slate-700 p-3 rounded">
+                <span className="text-slate-300">Debt/Equity</span>
+                <span className={`font-bold ${
+                  stock.debt_to_equity ? (stock.debt_to_equity <= 0.5 ? 'text-green-400' : stock.debt_to_equity <= 1.0 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
+                }`}>
+                  {stock.debt_to_equity ? stock.debt_to_equity.toFixed(2) : 'N/A'}
+                </span>
+              </div>
+
+              {/* Overall Score */}
+              <div className="flex justify-between items-center bg-slate-700 p-3 rounded border border-amber-600/30">
+                <span className="text-slate-300 font-medium">Overall Score</span>
+                <span className={`font-bold text-xl ${
+                  (scoringData?.score || stock.score || 0) >= 70 ? 'text-green-400' : 
+                  (scoringData?.score || stock.score || 0) >= 50 ? 'text-yellow-400' : 'text-red-400'
+                }`}>
+                  {(scoringData?.score || stock.score || 0).toFixed(1)}/100
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
