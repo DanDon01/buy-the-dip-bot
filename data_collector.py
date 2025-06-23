@@ -943,6 +943,28 @@ class DataCollector:
                 fundamentals = self._finnhub.get_stock_snapshot(ticker)
                 if fundamentals:
                     record["finnhub_fundamentals"] = fundamentals
+                    
+                    # Extract additional company profile data from Finnhub
+                    if fundamentals.get("company_name"):
+                        record["company_name"] = fundamentals["company_name"]
+                    if fundamentals.get("country"):
+                        record["country"] = fundamentals["country"]
+                    if fundamentals.get("phone"):
+                        record["phone"] = fundamentals["phone"]
+                    if fundamentals.get("website"):
+                        record["website"] = fundamentals["website"]
+                    if fundamentals.get("logo"):
+                        record["logo"] = fundamentals["logo"]
+                    if fundamentals.get("ipo_date"):
+                        record["ipo_date"] = fundamentals["ipo_date"]
+                    if fundamentals.get("finnhub_industry"):
+                        record["finnhub_industry"] = fundamentals["finnhub_industry"]
+                    if fundamentals.get("currency"):
+                        record["currency"] = fundamentals["currency"]
+                    # Note: shares_outstanding might conflict with Yahoo data, so prefix it
+                    if fundamentals.get("shares_outstanding"):
+                        record["finnhub_shares_outstanding"] = fundamentals["shares_outstanding"]
+                        
             except Exception as e:
                 print(f"⚠️  Finnhub fundamentals fetch failed for {ticker}: {e}")
 

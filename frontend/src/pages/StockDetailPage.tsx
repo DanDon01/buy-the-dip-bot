@@ -162,25 +162,31 @@ const StockDetailPage = () => {
   const chartData = stock.history?.map((item: any) => ({
     date: new Date(item.date).toLocaleDateString(),
     price: item.price,
-    '52_week_high': extraDetails?.['52_week_high']
+    '52_week_high': extraDetails?.['52_week_high'],
+    '52_week_low': extraDetails?.['52_week_low']
   })) || [];
 
-  // Calculate Y-axis domain to focus on price range
+  // Calculate Y-axis domain to show complete 52-week range
   const calculateYAxisDomain = () => {
     if (chartData.length === 0) return [0, 100];
     
     const prices = chartData.map((item: any) => item.price).filter((price: number) => price > 0);
     const high52w = extraDetails?.['52_week_high'];
+    const low52w = extraDetails?.['52_week_low'];
     
     if (prices.length === 0) return [0, 100];
     
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices, high52w || 0);
     
-    // Start Y-axis 15% below the lowest price for better focus
-    const yAxisMin = minPrice * 0.85;
+    // Use 52-week low if available, otherwise fall back to historical min
+    const absoluteLow = low52w ? Math.min(low52w, minPrice) : minPrice;
+    const absoluteHigh = high52w ? Math.max(high52w, maxPrice) : maxPrice;
+    
+    // Start Y-axis 10% below the 52-week low for complete range view
+    const yAxisMin = absoluteLow * 0.90;
     // Add 5% padding above the highest value
-    const yAxisMax = maxPrice * 1.05;
+    const yAxisMax = absoluteHigh * 1.05;
     
     return [yAxisMin, yAxisMax];
   };
@@ -331,8 +337,8 @@ const StockDetailPage = () => {
         {/* Price Chart */}
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-white mb-2">Price vs 52-Week High</h2>
-            <p className="text-slate-400">Historical price movement showing potential dip opportunities</p>
+            <h2 className="text-2xl font-bold text-white mb-2">Price vs 52-Week Range</h2>
+            <p className="text-slate-400">Historical price movement within 52-week high/low range showing dip opportunities</p>
           </div>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
@@ -376,138 +382,279 @@ const StockDetailPage = () => {
                     dot={false} 
                   />
                 )}
+                {extraDetails && extraDetails['52_week_low'] && (
+                  <Line 
+                    type="monotone" 
+                    name="52-Week Low" 
+                    dataKey="52_week_low" 
+                    stroke="#10b981" 
+                    strokeDasharray="8 3" 
+                    strokeWidth={2}
+                    dot={false} 
+                  />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Individual Radar Chart */}
+        {/* Volume Analysis for Dip Detection */}
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-white mb-2">{stock.ticker} Score Radar</h2>
-            <p className="text-slate-400">Multi-dimensional analysis of all scoring factors</p>
+            <h2 className="text-2xl font-bold text-white mb-2">Volume Analysis</h2>
+            <p className="text-slate-400">Volume patterns and signals critical for identifying dip buying opportunities</p>
           </div>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#475569" />
-                <PolarAngleAxis 
-                  dataKey="subject"
-                  tick={(props: any) => {
-                    const { x, y, payload, index } = props;
-                    const color = radarColors[index % radarColors.length];
-                    
-                    // Calculate center point (assuming center is around 150,150 for typical radar size)
-                    const centerX = 150;
-                    const centerY = 150;
-                    
-                    // Calculate direction from center to current position
-                    const dx = x - centerX;
-                    const dy = y - centerY;
-                    
-                    // Normalize and extend outward by 20 pixels
-                    const length = Math.sqrt(dx * dx + dy * dy);
-                    const offsetDistance = 20;
-                    const newX = x + (dx / length) * offsetDistance;
-                    const newY = y + (dy / length) * offsetDistance;
-                    
-                    return (
-                      <text
-                        x={newX}
-                        y={newY}
-                        fill={color}
-                        fontSize={12}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        className="font-medium"
-                      >
-                        {payload.value}
-                      </text>
-                    );
-                  }}
-                  className="text-slate-300"
-                />
-                <PolarRadiusAxis 
-                  angle={90} 
-                  domain={[0, 10]} 
-                  tick={{ fill: '#94a3b8', fontSize: 10 }}
-                  tickCount={6}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#1e293b', 
-                    border: '1px solid #475569', 
-                    borderRadius: '8px' 
-                  }}
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      // Only show tooltip for the main score data, filter out layer data
-                      const scoreData = payload.find((item: any) => item.name === 'Score');
-                      if (scoreData) {
-                        return (
-                          <div style={{
-                            backgroundColor: '#1e293b',
-                            border: '1px solid #475569',
-                            borderRadius: '8px',
-                            padding: '8px'
-                          }}>
-                            <p style={{ color: '#cbd5e1', margin: 0 }}>
-                              {`${label}: ${typeof scoreData.value === 'number' ? scoreData.value.toFixed(2) : scoreData.value || 'N/A'}`}
-                            </p>
-                          </div>
-                        );
-                      }
-                    }
-                    return null;
-                  }}
-                />
+          
+          {/* Check if volume data is available */}
+          {(!stock.volume || !stock.avg_volume || isNaN(stock.volume) || isNaN(stock.avg_volume)) ? (
+            <div className="bg-amber-900/50 border border-amber-700 p-6 rounded-lg">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-amber-400 text-xl">⚠️</span>
+                <h3 className="text-lg font-semibold text-amber-300">Volume Data Not Available</h3>
+              </div>
+              <div className="text-amber-200 space-y-2">
+                <p>Current volume data is missing or incomplete for this stock.</p>
+                <div className="text-sm text-amber-300 bg-amber-900/30 p-3 rounded mt-3">
+                  <div className="font-medium mb-1">📊 Data Status:</div>
+                  <div>• Current Volume: {stock.volume ? (stock.volume / 1000000).toFixed(1) + 'M' : 'Not Available'}</div>
+                  <div>• Average Volume: {stock.avg_volume ? (stock.avg_volume / 1000000).toFixed(1) + 'M' : 'Not Available'}</div>
+                </div>
+                <div className="text-sm text-amber-300 mt-3">
+                  <strong>💡 To get volume data:</strong> Run data collection to gather current volume information from market APIs.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Volume Spike Analysis */}
+              <div className="bg-slate-700 border border-slate-600 p-6 rounded-lg">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-red-400">📊</span>
+                  <h3 className="text-lg font-semibold text-white">Volume Spike Detection</h3>
+                </div>
                 
-                {/* Create multiple overlapping radars with different colors */}
-                {radarColors.map((color, colorIndex) => (
-                  <Radar
-                    key={`color-${colorIndex}`}
-                    name={`Layer ${colorIndex}`}
-                    dataKey="A"
-                    stroke={color}
-                    fill={color}
-                    fillOpacity={0.08}
-                    strokeWidth={1}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                ))}
+                <div className="space-y-4">
+                  {/* Current Volume vs Average */}
+                  <div className="bg-slate-800 p-4 rounded-lg">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-slate-300">Current vs Average</span>
+                      <span className={`font-bold text-lg ${
+                        (stock.volume / stock.avg_volume) >= 2.0 ? 'text-red-400' :
+                        (stock.volume / stock.avg_volume) >= 1.5 ? 'text-orange-400' :
+                        (stock.volume / stock.avg_volume) >= 1.2 ? 'text-yellow-400' : 'text-slate-400'
+                      }`}>
+                        {(stock.volume / stock.avg_volume).toFixed(1)}x
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Current: {(stock.volume / 1000000).toFixed(1)}M | Avg: {(stock.avg_volume / 1000000).toFixed(1)}M
+                    </div>
+                    
+                    {/* Volume Classification */}
+                    <div className="mt-3">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        (stock.volume / stock.avg_volume) >= 3.0 ? 'bg-red-900 text-red-300' :
+                        (stock.volume / stock.avg_volume) >= 2.0 ? 'bg-orange-900 text-orange-300' :
+                        (stock.volume / stock.avg_volume) >= 1.5 ? 'bg-yellow-900 text-yellow-300' :
+                        (stock.volume / stock.avg_volume) >= 1.2 ? 'bg-blue-900 text-blue-300' : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {
+                          (stock.volume / stock.avg_volume) >= 3.0 ? '🚨 Extreme Spike' :
+                          (stock.volume / stock.avg_volume) >= 2.0 ? '🔥 Strong Spike' :
+                          (stock.volume / stock.avg_volume) >= 1.5 ? '⚡ Moderate Spike' :
+                          (stock.volume / stock.avg_volume) >= 1.2 ? '📈 Mild Increase' : '😴 Normal Volume'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Sweet Spot Indicator */}
+                  <div className={`p-3 rounded-lg border-2 ${
+                    (stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ?
+                    'border-green-500 bg-green-900/30' : 'border-slate-600 bg-slate-800'
+                  }`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-lg ${
+                        (stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ?
+                        'text-green-400' : 'text-slate-400'
+                      }`}>
+                        {(stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ? '🎯' : '📍'}
+                      </span>
+                      <span className={`font-medium ${
+                        (stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ?
+                        'text-green-300' : 'text-slate-400'
+                      }`}>
+                        Dip Hunting Sweet Spot
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Optimal volume range: 1.5x - 3.0x average for dip opportunities
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Volume Signals & Patterns */}
+              <div className="bg-slate-700 border border-slate-600 p-6 rounded-lg">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-green-400">🔍</span>
+                  <h3 className="text-lg font-semibold text-white">Volume Signals</h3>
+                </div>
                 
-                {/* Main radar with colored dots on top */}
-                <Radar
-                  name="Score"
-                  dataKey="A"
-                  stroke="transparent"
-                  fill="transparent"
-                  fillOpacity={0}
-                  strokeWidth={0}
-                  dot={(dotProps: any) => {
-                    const { cx = 0, cy = 0, index = 0 } = dotProps;
-                    const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0;
-                    const safeCx = typeof cx === 'number' && !isNaN(cx) ? cx : 0;
-                    const safeCy = typeof cy === 'number' && !isNaN(cy) ? cy : 0;
-                    const color = radarColors[safeIndex % radarColors.length];
-                    return (
-                      <circle
-                        key={`radar-dot-${safeIndex}`}
-                        cx={safeCx}
-                        cy={safeCy}
-                        r={5}
-                        fill={color}
-                        stroke={color}
-                        strokeWidth={2}
-                      />
-                    );
-                  }}
-                  isAnimationActive={false}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
+                <div className="space-y-3">
+                  {/* Capitulation Signal */}
+                  <div className={`p-3 rounded-lg ${
+                    (stock.volume / stock.avg_volume) >= 2.0 && 
+                    stock.prev_close && ((stock.price - stock.prev_close) / stock.prev_close) * 100 <= -3.0 ?
+                    'bg-red-900/50 border border-red-700' : 'bg-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-red-400">💥</span>
+                        <span className="text-sm font-medium text-white">Capitulation Signal</span>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        (stock.volume / stock.avg_volume) >= 2.0 && 
+                        stock.prev_close && ((stock.price - stock.prev_close) / stock.prev_close) * 100 <= -3.0 ?
+                        'bg-red-800 text-red-200' : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {(stock.volume / stock.avg_volume) >= 2.0 && 
+                         stock.prev_close && ((stock.price - stock.prev_close) / stock.prev_close) * 100 <= -3.0 ? 'ACTIVE' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      High volume + significant price drop = potential selling climax
+                    </div>
+                  </div>
+                  
+                  {/* Accumulation Signal */}
+                  <div className={`p-3 rounded-lg ${
+                    (stock.volume / stock.avg_volume) >= 1.3 &&
+                    stock.prev_close && Math.abs(((stock.price - stock.prev_close) / stock.prev_close) * 100) <= 2.0 ?
+                    'bg-green-900/50 border border-green-700' : 'bg-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-green-400">📈</span>
+                        <span className="text-sm font-medium text-white">Accumulation Signal</span>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        (stock.volume / stock.avg_volume) >= 1.3 &&
+                        stock.prev_close && Math.abs(((stock.price - stock.prev_close) / stock.prev_close) * 100) <= 2.0 ?
+                        'bg-green-800 text-green-200' : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {(stock.volume / stock.avg_volume) >= 1.3 &&
+                         stock.prev_close && Math.abs(((stock.price - stock.prev_close) / stock.prev_close) * 100) <= 2.0 ? 'ACTIVE' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Above average volume + price stability = smart money buying
+                    </div>
+                  </div>
+                  
+                  {/* Volume Trend */}
+                  <div className="p-3 rounded-lg bg-slate-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-400">📊</span>
+                        <span className="text-sm font-medium text-white">Volume Trend</span>
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
+                        {(stock.volume / stock.avg_volume) > 1.2 ? '📈 Increasing' : 
+                         (stock.volume / stock.avg_volume) < 0.8 ? '📉 Decreasing' : '➡️ Stable'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Current vs historical average volume trend
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Volume Metrics Summary */}
+              <div className="lg:col-span-2">
+                <div className="bg-slate-700 border border-slate-600 p-6 rounded-lg">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-yellow-400">📋</span>
+                    <h3 className="text-lg font-semibold text-white">Volume Analysis Summary</h3>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* Current Volume */}
+                    <div className="text-center p-3 bg-slate-800 rounded-lg">
+                      <div className="text-lg font-bold text-white">
+                        {(stock.volume / 1000000).toFixed(1)}M
+                      </div>
+                      <div className="text-xs text-slate-400">Current Volume</div>
+                    </div>
+                    
+                    {/* Average Volume */}
+                    <div className="text-center p-3 bg-slate-800 rounded-lg">
+                      <div className="text-lg font-bold text-white">
+                        {(stock.avg_volume / 1000000).toFixed(1)}M
+                      </div>
+                      <div className="text-xs text-slate-400">Historical Average</div>
+                    </div>
+                    
+                    {/* Volume Ratio */}
+                    <div className="text-center p-3 bg-slate-800 rounded-lg">
+                      <div className={`text-lg font-bold ${
+                        (stock.volume / stock.avg_volume) >= 2.0 ? 'text-red-400' :
+                        (stock.volume / stock.avg_volume) >= 1.5 ? 'text-orange-400' :
+                        'text-white'
+                      }`}>
+                        {(stock.volume / stock.avg_volume).toFixed(2)}x
+                      </div>
+                      <div className="text-xs text-slate-400">Volume Ratio</div>
+                    </div>
+                    
+                    {/* Dip Opportunity Indicator */}
+                    <div className="text-center p-3 bg-slate-800 rounded-lg">
+                      <div className={`text-lg font-bold ${
+                        (stock.volume / stock.avg_volume) >= 1.5 && 
+                        (stock.volume / stock.avg_volume) <= 3.0 ?
+                        'text-green-400' : 'text-slate-400'
+                      }`}>
+                        {(stock.volume / stock.avg_volume) >= 1.5 && 
+                         (stock.volume / stock.avg_volume) <= 3.0 ? '🎯' : '⏸️'}
+                      </div>
+                      <div className="text-xs text-slate-400">Dip Opportunity</div>
+                    </div>
+                  </div>
+                  
+                  {/* Volume Interpretation */}
+                  <div className="mt-4 p-4 bg-slate-800 rounded-lg">
+                    <h4 className="text-sm font-semibold text-white mb-2">💡 Volume Analysis Interpretation</h4>
+                    <div className="text-sm text-slate-300 space-y-1">
+                      {(stock.volume / stock.avg_volume) >= 3.0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-red-400 mt-0.5">⚠️</span>
+                          <span>Extreme volume spike may indicate distribution or panic selling. Exercise caution.</span>
+                        </div>
+                      )}
+                      {(stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) < 3.0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-green-400 mt-0.5">✅</span>
+                          <span>Volume in optimal range for dip opportunities. Increased interest with controlled selling.</span>
+                        </div>
+                      )}
+                      {(stock.volume / stock.avg_volume) < 1.5 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-yellow-400 mt-0.5">📊</span>
+                          <span>Normal to low volume. May lack conviction for significant price movement.</span>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-0.5">💭</span>
+                        <span>Volume analysis works best when combined with price action and technical indicators.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -670,52 +817,173 @@ const StockDetailPage = () => {
             </div>
           )}
           
-          <div className="grid grid-cols-1 gap-4">
-            {extraDetails ? (
-              <>
-                <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider">Market Cap</h3>
-                    <p className="text-xl font-bold text-white">
-                      {extraDetails.market_cap ? `$${(extraDetails.market_cap / 1_000_000_000).toFixed(2)}B` : 'N/A'}
-                    </p>
-                  </div>
+          {/* Company Name Header */}
+          {stock.company_name && (
+            <div className="mb-6 pb-4 border-b border-slate-600">
+              <div className="flex items-center gap-4">
+                {stock.logo && (
+                  <img 
+                    src={stock.logo} 
+                    alt={`${stock.company_name} logo`}
+                    className="w-12 h-12 rounded-lg object-contain bg-white p-1"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                )}
+                <div>
+                  <h3 className="text-xl font-semibold text-white">{stock.company_name}</h3>
+                  <p className="text-slate-400 text-sm">{stock.ticker}</p>
                 </div>
-                
-                <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider">Forward P/E</h3>
-                    <p className="text-xl font-bold text-white">
-                      {extraDetails.forward_pe ? extraDetails.forward_pe.toFixed(2) : 'N/A'}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider">Dividend Yield</h3>
-                    <p className="text-xl font-bold text-white">
-                      {extraDetails.dividend_yield ? `${(extraDetails.dividend_yield * 100).toFixed(2)}%` : 'N/A'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider">52-Week Range</h3>
-                    <p className="text-xl font-bold text-white">
-                      {extraDetails['52_week_low'] && extraDetails['52_week_high'] 
-                        ? `$${extraDetails['52_week_low'].toFixed(2)} - $${extraDetails['52_week_high'].toFixed(2)}`
-                        : 'N/A'}
-                    </p>
-                  </div>
-                </div>
-              </>
-            ) : !detailsError ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-pulse text-slate-400">Loading market details...</div>
               </div>
-            ) : null}
+            </div>
+          )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Company Information */}
+            <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-blue-400">🏢</span>
+                <h3 className="text-lg font-semibold text-white">Company Information</h3>
+              </div>
+              <div className="space-y-2 text-sm">
+                {stock.country && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Country:</span>
+                    <span className="text-white">{stock.country}</span>
+                  </div>
+                )}
+                {stock.sector && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Sector:</span>
+                    <span className="text-white">{stock.sector}</span>
+                  </div>
+                )}
+                {stock.industry && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Industry:</span>
+                    <span className="text-white">{stock.industry}</span>
+                  </div>
+                )}
+                {stock.finnhub_industry && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Classification:</span>
+                    <span className="text-white">{stock.finnhub_industry}</span>
+                  </div>
+                )}
+                {stock.ipo_date && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">IPO Date:</span>
+                    <span className="text-white">{stock.ipo_date}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Contact & Links */}
+            <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-green-400">📞</span>
+                <h3 className="text-lg font-semibold text-white">Contact & Links</h3>
+              </div>
+              <div className="space-y-2 text-sm">
+                {stock.website && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Website:</span>
+                    <a 
+                      href={stock.website.startsWith('http') ? stock.website : `https://${stock.website}`}
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 underline"
+                    >
+                      Visit Site
+                    </a>
+                  </div>
+                )}
+                {stock.phone && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Phone:</span>
+                    <span className="text-white">{stock.phone}</span>
+                  </div>
+                )}
+                {stock.exchange && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Exchange:</span>
+                    <span className="text-white">{stock.exchange}</span>
+                  </div>
+                )}
+                {stock.currency && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Currency:</span>
+                    <span className="text-white">{stock.currency}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Trading Information */}
+            <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-purple-400">📊</span>
+                <h3 className="text-lg font-semibold text-white">Trading Information</h3>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Avg Volume:</span>
+                  <span className="text-white">
+                    {stock.avg_volume ? (stock.avg_volume / 1000000).toFixed(1) + 'M' : 'N/A'}
+                  </span>
+                </div>
+                {stock.shares_outstanding && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Shares Outstanding:</span>
+                    <span className="text-white">
+                      {(stock.shares_outstanding / 1000000).toFixed(1)}M
+                    </span>
+                  </div>
+                )}
+                {stock.finnhub_shares_outstanding && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Shares (Finnhub):</span>
+                    <span className="text-white">
+                      {(stock.finnhub_shares_outstanding / 1000000).toFixed(1)}M
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Financial Summary */}
+            <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg hover:border-slate-500 transition-colors">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-yellow-400">💰</span>
+                <h3 className="text-lg font-semibold text-white">Financial Summary</h3>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Market Cap:</span>
+                  <span className="text-white">
+                    ${stock.market_cap ? (stock.market_cap / 1000000000).toFixed(1) + 'B' : 'N/A'}
+                  </span>
+                </div>
+                {stock.pe && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">P/E Ratio:</span>
+                    <span className="text-white">{stock.pe.toFixed(2)}</span>
+                  </div>
+                )}
+                {stock.dividend_yield && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Dividend Yield:</span>
+                    <span className="text-white">{(stock.dividend_yield * 100).toFixed(2)}%</span>
+                  </div>
+                )}
+                {stock.beta && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Beta:</span>
+                    <span className="text-white">{stock.beta.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

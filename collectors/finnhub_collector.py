@@ -158,6 +158,16 @@ class FinnhubCollector:
             "52w_high": hi_52w,
             "52w_low": lo_52w,
             "fundamentals": fundamentals_metric,
+            # Additional company profile data from Finnhub
+            "company_name": profile.get("name"),
+            "country": profile.get("country"),
+            "phone": profile.get("phone"),
+            "website": profile.get("weburl"),
+            "logo": profile.get("logo"),
+            "ipo_date": profile.get("ipo"),
+            "finnhub_industry": profile.get("finnhubIndustry"),
+            "shares_outstanding": profile.get("shareOutstanding"),
+            "currency": profile.get("currency"),
         }
 
         return snapshot
