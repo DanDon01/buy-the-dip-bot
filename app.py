@@ -10,6 +10,8 @@ from yahooquery import Ticker
 import subprocess
 import sys
 from scoring.composite_scorer import CompositeScorer
+from scoring.config_manager import ScoringConfigManager as ConfigManager
+from collectors.volume_analysis import VolumeAnalyzer
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})  # Allow all origins for API routes
@@ -188,6 +190,43 @@ def get_stock_detail(ticker):
         else:
             # If data format is unexpected, set to empty array
             stock_record['history'] = []
+    
+    # Extract current volume from historical data if available
+    if 'historical_data' in stock_record and isinstance(stock_record['historical_data'], dict):
+        hist_data = stock_record['historical_data']
+        if 'volume' in hist_data and hist_data['volume']:
+            # Add current volume (last day) to the response
+            stock_record['volume'] = hist_data['volume'][-1]
+            stock_record['prev_close'] = hist_data['close'][-2] if len(hist_data['close']) > 1 else hist_data['close'][-1]
+            
+            # Add enhanced volume analysis using VolumeAnalyzer
+            try:
+                volume_analyzer = VolumeAnalyzer()
+                # Create DataFrame for volume analysis
+                volume_df = pd.DataFrame({
+                    'Close': hist_data['close'],
+                    'Volume': hist_data['volume'], 
+                    'High': hist_data['high'],
+                    'Low': hist_data['low']
+                }, index=pd.to_datetime(hist_data['dates']))
+                
+                # Get comprehensive volume analysis
+                volume_analysis = volume_analyzer.analyze_volume_patterns(volume_df, ticker.upper())
+                stock_record['volume_analysis'] = volume_analysis
+                print(f"✅ Enhanced volume analysis added for {ticker}")
+                
+            except Exception as vol_error:
+                print(f"⚠️ Error calculating volume analysis for {ticker}: {vol_error}")
+                stock_record['volume_analysis'] = {}
+        else:
+            stock_record['volume'] = stock_record.get('avg_volume', 0)
+            stock_record['prev_close'] = stock_record.get('current_price', 0)
+            stock_record['volume_analysis'] = {}
+    else:
+        # Fallback to avg_volume if no historical data
+        stock_record['volume'] = stock_record.get('avg_volume', 0)
+        stock_record['prev_close'] = stock_record.get('current_price', 0)
+        stock_record['volume_analysis'] = {}
     
     # Try to get enhanced scoring data from the new 4-layer system
     try:
