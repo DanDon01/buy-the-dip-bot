@@ -60,34 +60,27 @@ class QualityGate:
             Tuple of (quality_score, quality_details)
         """
         try:
-            # Get fundamental data (from Phase 1 or fresh)
-            if enhanced_data and 'fundamentals' in enhanced_data:
-                fundamentals = enhanced_data['fundamentals']
-            else:
-                fundamentals = self.fundamental_collector.get_fundamental_metrics(ticker)
+            # THE FIX: Get the nested stock_data record, which contains the fundamentals
+            stock_data = enhanced_data.get('ticker_data', {})
+            if not stock_data:
+                return 0, self._empty_quality_details()
             
-            # Calculate each quality component
-            cash_flow_score = self._score_cash_flow_health(fundamentals)
-            profitability_score = self._score_profitability(fundamentals)
-            debt_score = self._score_debt_management(fundamentals)
-            valuation_score = self._score_valuation_sanity(fundamentals)
-            business_score = self._score_business_quality(fundamentals)
+            # All sub-methods will now use the correct stock_data object
+            cash_flow_score = self._score_cash_flow_health(stock_data)
+            profitability_score = self._score_profitability(stock_data)
+            debt_score = self._score_debt_management(stock_data)
+            valuation_score = self._score_valuation_sanity(stock_data)
+            business_score = self._score_business_quality(stock_data)
             
-            # Total quality score
             total_score = (
-                cash_flow_score + 
-                profitability_score + 
-                debt_score + 
-                valuation_score + 
-                business_score
+                cash_flow_score + profitability_score + debt_score + 
+                valuation_score + business_score
             )
             
-            # Quality check failures (for filtering)
-            quality_checks = self._perform_quality_checks(fundamentals)
+            quality_checks = self._perform_quality_checks(stock_data)
             failed_checks = sum(1 for check in quality_checks.values() if not check)
             
-            # Apply quality gate filter
-            passes_quality_gate = failed_checks < 3  # Allow 2 failed checks instead of 1
+            passes_quality_gate = failed_checks < 3
             
             quality_details = {
                 'cash_flow_health': cash_flow_score,
@@ -96,7 +89,7 @@ class QualityGate:
                 'valuation_sanity': valuation_score,
                 'business_quality': business_score,
                 'total_quality_score': total_score,
-                'quality_checks': quality_checks,
+                'check_details': quality_checks,
                 'failed_checks': failed_checks,
                 'passes_quality_gate': passes_quality_gate,
                 'quality_grade': self._get_quality_grade(total_score)
@@ -113,25 +106,25 @@ class QualityGate:
         score = 0
         max_score = self.weights['cash_flow_health']
         
-        # Free cash flow positive (4 points)
         fcf = fundamentals.get('free_cash_flow')
-        if fcf and fcf > 0:
+        op_cash_flow = fundamentals.get('operating_cash_flow')
+
+        if fcf is not None and fcf > 0:
             score += 4
-        elif fcf and fcf > -fundamentals.get('operating_cash_flow', 0) * 0.1:
-            score += 2  # Small FCF deficit acceptable if op cash flow strong
+        elif fcf is not None and op_cash_flow is not None and fcf > -op_cash_flow * 0.1:
+            score += 2
         
-        # Cash vs debt position (4 points)
         total_cash = fundamentals.get('total_cash', 0)
         total_debt = fundamentals.get('total_debt', 0)
         
         if total_debt == 0:
-            score += 4  # No debt is excellent
+            score += 4
         elif total_cash > total_debt:
-            score += 3  # More cash than debt
+            score += 3
         elif total_cash > total_debt * 0.5:
-            score += 2  # Decent cash coverage
+            score += 2
         elif total_cash > total_debt * 0.25:
-            score += 1  # Some cash coverage
+            score += 1
         
         return min(score, max_score)
     
@@ -140,29 +133,19 @@ class QualityGate:
         score = 0
         max_score = self.weights['profitability']
         
-        # Operating margins (4 points)
         op_margins = fundamentals.get('operating_margins')
         if op_margins:
-            if op_margins > 0.15:  # 15%+ excellent
-                score += 4
-            elif op_margins > 0.10:  # 10%+ good
-                score += 3
-            elif op_margins > 0.05:  # 5%+ acceptable
-                score += 2
-            elif op_margins > 0:  # Positive is minimum
-                score += 1
+            if op_margins > 0.15: score += 4
+            elif op_margins > 0.10: score += 3
+            elif op_margins > 0.05: score += 2
+            elif op_margins > 0: score += 1
         
-        # Return on Equity (4 points)
         roe = fundamentals.get('return_on_equity')
         if roe:
-            if roe > 0.20:  # 20%+ excellent
-                score += 4
-            elif roe > 0.15:  # 15%+ good
-                score += 3
-            elif roe > 0.10:  # 10%+ acceptable
-                score += 2
-            elif roe > 0:  # Positive is minimum
-                score += 1
+            if roe > 0.20: score += 4
+            elif roe > 0.15: score += 3
+            elif roe > 0.10: score += 2
+            elif roe > 0: score += 1
         
         return min(score, max_score)
     
@@ -171,29 +154,20 @@ class QualityGate:
         score = 0
         max_score = self.weights['debt_management']
         
-        # Debt to equity ratio (4 points)
         debt_equity = fundamentals.get('debt_to_equity')
         if debt_equity is not None:
-            if debt_equity < 0.3:  # Very conservative
-                score += 4
-            elif debt_equity < 0.5:  # Conservative
-                score += 3
-            elif debt_equity < 1.0:  # Moderate
-                score += 2
-            elif debt_equity < 2.0:  # High but manageable
-                score += 1
+            if debt_equity < 0.3: score += 4
+            elif debt_equity < 0.5: score += 3
+            elif debt_equity < 1.0: score += 2
+            elif debt_equity < 2.0: score += 1
         else:
-            score += 2  # No debt data, assume moderate
+            score += 2
         
-        # Current ratio (3 points)
         current_ratio = fundamentals.get('current_ratio')
         if current_ratio:
-            if current_ratio > 2.0:  # Very liquid
-                score += 3
-            elif current_ratio > 1.5:  # Good liquidity
-                score += 2
-            elif current_ratio > 1.0:  # Adequate liquidity
-                score += 1
+            if current_ratio > 2.0: score += 3
+            elif current_ratio > 1.5: score += 2
+            elif current_ratio > 1.0: score += 1
         
         return min(score, max_score)
     
@@ -202,31 +176,22 @@ class QualityGate:
         score = 0
         max_score = self.weights['valuation_sanity']
         
-        # P/E ratio reasonableness (4 points)
-        pe = fundamentals.get('pe_ratio')
+        pe = fundamentals.get('pe')
         if pe:
-            if pe < 10:  # Very cheap
-                score += 4
-            elif pe < 20:  # Reasonable
-                score += 3
-            elif pe < 30:  # Acceptable
-                score += 2
-            elif pe < 50:  # High but not insane
-                score += 1
+            if pe < 10: score += 4
+            elif pe < 20: score += 3
+            elif pe < 30: score += 2
+            elif pe < 50: score += 1
         else:
-            score += 2  # No P/E data, assume moderate
+            score += 2
         
-        # Price to book sanity (3 points)
         pb = fundamentals.get('price_to_book')
         if pb:
-            if pb < 2.0:  # Reasonable
-                score += 3
-            elif pb < 5.0:  # Acceptable
-                score += 2
-            elif pb < 10.0:  # High but not insane
-                score += 1
+            if pb < 2.0: score += 3
+            elif pb < 5.0: score += 2
+            elif pb < 10.0: score += 1
         else:
-            score += 1  # No P/B data, assume moderate
+            score += 1
         
         return min(score, max_score)
     
@@ -235,27 +200,20 @@ class QualityGate:
         score = 0
         max_score = self.weights['business_quality']
         
-        # Revenue growth (3 points)
         rev_growth = fundamentals.get('revenue_growth')
         if rev_growth:
-            if rev_growth > 0.15:  # 15%+ growth
-                score += 3
-            elif rev_growth > 0.05:  # 5%+ growth
-                score += 2
-            elif rev_growth > 0:  # Positive growth
-                score += 1
+            if rev_growth > 0.15: score += 3
+            elif rev_growth > 0.05: score += 2
+            elif rev_growth > 0: score += 1
         
-        # Dividend sustainability (2 points)
         payout_ratio = fundamentals.get('payout_ratio')
         dividend_yield = fundamentals.get('dividend_yield')
         
         if dividend_yield and dividend_yield > 0:
-            if payout_ratio and payout_ratio < 0.6:  # Sustainable dividend
-                score += 2
-            elif payout_ratio and payout_ratio < 0.8:  # Moderate payout
-                score += 1
+            if payout_ratio and payout_ratio < 0.6: score += 2
+            elif payout_ratio and payout_ratio < 0.8: score += 1
         else:
-            score += 1  # No dividend stress
+            score += 1
         
         return min(score, max_score)
     
@@ -263,59 +221,41 @@ class QualityGate:
         """Perform binary quality checks for filtering."""
         checks = {}
         
-        # 1. Positive FCF or strong operating cash flow
         fcf = fundamentals.get('free_cash_flow', 0)
         op_cf = fundamentals.get('operating_cash_flow', 0)
-        checks['positive_cash_flow'] = fcf > 0 or op_cf > fcf * 2
-        
-        # 2. Reasonable debt levels
+        checks['positive_cash_flow'] = fcf > 0 or (op_cf and fcf > -op_cf * 0.2)
+
         debt_equity = fundamentals.get('debt_to_equity')
         checks['manageable_debt'] = debt_equity is None or debt_equity < 3.0
         
-        # 3. Profitability 
         profit_margins = fundamentals.get('profit_margins', 0)
         checks['profitable'] = profit_margins is None or profit_margins > 0
         
-        # 4. Liquidity
         current_ratio = fundamentals.get('current_ratio', 1.5)
         checks['adequate_liquidity'] = current_ratio is None or current_ratio > 0.8
         
-        # 5. Valuation not insane
-        pe = fundamentals.get('pe_ratio')
+        pe = fundamentals.get('pe')
         checks['sane_valuation'] = pe is None or pe < 100
         
         return checks
     
     def _get_quality_grade(self, score: float) -> str:
         """Convert quality score to letter grade."""
-        if score >= self.max_points * 0.85:
-            return 'A'
-        elif score >= self.max_points * 0.70:
-            return 'B'
-        elif score >= self.max_points * 0.55:
-            return 'C'
-        elif score >= self.max_points * 0.40:
-            return 'D'
-        else:
-            return 'F'
+        if score >= self.max_points * 0.85: return 'A'
+        elif score >= self.max_points * 0.70: return 'B'
+        elif score >= self.max_points * 0.55: return 'C'
+        elif score >= self.max_points * 0.40: return 'D'
+        else: return 'F'
     
     def _empty_quality_details(self) -> Dict:
         """Return empty quality details when calculation fails."""
         return {
-            'cash_flow_health': 0,
-            'profitability': 0,
-            'debt_management': 0,
-            'valuation_sanity': 0,
-            'business_quality': 0,
+            'cash_flow_health': 0, 'profitability': 0, 'debt_management': 0,
+            'valuation_sanity': 0, 'business_quality': 0,
             'total_quality_score': 0,
-            'quality_checks': {
-                'positive_cash_flow': False,
-                'manageable_debt': False,
-                'profitable': False,
-                'adequate_liquidity': False,
-                'sane_valuation': False
+            'check_details': {
+                'positive_cash_flow': False, 'manageable_debt': False,
+                'profitable': False, 'adequate_liquidity': False, 'sane_valuation': False
             },
-            'failed_checks': 5,
-            'passes_quality_gate': False,
-            'quality_grade': 'F'
+            'failed_checks': 5, 'passes_quality_gate': False, 'quality_grade': 'F'
         } 

@@ -711,3 +711,27 @@ def load_valid_tickers(max_age_days: int = 1):
 
     # Need to rebuild
     return _rebuild_validated_cache() 
+
+def clean_data_for_json(data):
+    """
+    Recursively cleans data to make it JSON serializable.
+    Converts numpy types to native Python types.
+    """
+    if isinstance(data, dict):
+        return {k: clean_data_for_json(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_data_for_json(i) for i in data]
+    elif isinstance(data, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+        return int(data)
+    elif isinstance(data, (np.floating, np.float16, np.float32, np.float64)):
+        return float(data)
+    elif isinstance(data, np.bool_):
+        return bool(data)
+    elif isinstance(data, (np.ndarray,)):
+        return data.tolist()
+    elif isinstance(data, pd.Timestamp):
+        return data.isoformat()
+    # Add other numpy/pandas type conversions as needed
+    return data

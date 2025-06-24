@@ -315,7 +315,7 @@ class BuyTheDipCLI:
             import traceback
             traceback.print_exc()
     
-    def score_stocks(self, score_all: bool = False):
+    def score_stocks(self, score_all: bool = False, tickers_to_score: Optional[List[str]] = None):
         """Apply enhanced 4-layer scoring methodology."""
         self.print_header("ENHANCED SCORING ENGINE")
         
@@ -341,8 +341,12 @@ class BuyTheDipCLI:
             
             start_time = time.time()
             
-            # Get the latest filter to determine scoring universe
-            if not score_all:
+            # Determine scoring universe
+            scoring_tickers = []
+            if tickers_to_score:
+                scoring_tickers = [t for t in tickers_to_score if t in stock_data]
+                print(f"   🎯 Scoring a specific list of {len(scoring_tickers)} stocks.")
+            elif not score_all:
                 filter_files = list(self.filters_dir.glob("filtered_universe_*_*.csv"))
                 if filter_files:
                     latest_filter = max(filter_files, key=lambda x: x.stat().st_mtime)
@@ -699,7 +703,7 @@ class BuyTheDipCLI:
         print(f"   📈 This analyzes fundamental health, technical patterns, and market conditions")
         
         start_time = time.time()
-        self.score_stocks(score_all=False)  # Score only the collected stocks
+        self.score_stocks(tickers_to_score=analysis_tickers)
         elapsed = time.time() - start_time
         print(f"   ✅ Scoring completed in {elapsed:.1f}s")
         

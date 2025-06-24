@@ -77,6 +77,9 @@ class CompositeScorer:
             # Gather enhanced data if not provided (using Phase 1 collectors)
             enhanced_data = pre_computed_data or self._gather_enhanced_data(df, ticker)
             
+            # Perform volume analysis and store it for later use
+            volume_analysis_results = self.volume_analyzer.analyze_volume_patterns(df, ticker)
+            
             # Layer 1: Quality Gate (with filtering)
             quality_score, quality_details = self.quality_gate.score_quality_gate(
                 ticker, enhanced_data
@@ -109,6 +112,7 @@ class CompositeScorer:
             scoring_breakdown = {
                 'final_composite_score': final_score,
                 'base_score': base_score,
+                'volume_analysis': volume_analysis_results,
                 'layer_scores': {
                     'quality_gate': quality_score,
                     'dip_signal': dip_score,

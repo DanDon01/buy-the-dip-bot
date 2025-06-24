@@ -14,7 +14,56 @@ from scoring.config_manager import ScoringConfigManager as ConfigManager
 from collectors.volume_analysis import VolumeAnalyzer
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})  # Allow all origins for API routes
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})  # More specific origin
+
+def merge_data(scores_data, stock_data):
+    """Merges scoring data with fundamental and historical stock data."""
+    processed = {}
+    
+    # Process stocks that have scores
+    if scores_data and 'scores' in scores_data:
+        for ticker, score_info in scores_data['scores'].items():
+            if ticker in stock_data:
+                # Merge score_info into the main stock_data record
+                stock_data[ticker].update(score_info)
+                processed[ticker] = stock_data[ticker]
+            else:
+                # If only in scores, create a new record
+                processed[ticker] = score_info
+
+    # Add stocks that are in stock_data but not in scores
+    for ticker, data in stock_data.items():
+        if ticker not in processed:
+            processed[ticker] = data
+            
+    return processed
+
+def load_all_data():
+    """Load and merge all necessary data caches at startup."""
+    try:
+        with open(os.path.join("cache", "daily_scores.json"), 'r') as f:
+            scores_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        scores_data = {}
+        print("⚠️  Warning: daily_scores.json not found or invalid. Scoring data will be missing.")
+
+    try:
+        with open(os.path.join("cache", "stock_data.json"), 'r') as f:
+            stock_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        stock_data = {}
+        print("⚠️  Warning: stock_data.json not found or invalid. Fundamental data will be missing.")
+
+    return merge_data(scores_data, stock_data)
+
+# Load data into memory when the app starts
+processed_data = load_all_data()
+print(f"✅ Loaded data for {len(processed_data)} stocks at startup.")
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 def load_processed_data():
     """Load and merge score data with historical data."""
@@ -165,128 +214,54 @@ def get_stocks():
 
 @app.route('/api/stock/<ticker>')
 def get_stock_detail(ticker):
-    """API endpoint for individual stock data with enhanced 4-layer scoring."""
-    df = load_processed_data()
-    if df is None:
-        return jsonify({'error': 'No data available'}), 404
+    """API endpoint for fetching merged stock data from local cache."""
+    stock_record = processed_data.get(ticker.upper(), {}).copy()
+
+    if not stock_record:
+        return jsonify({"error": "Stock data not found for " + ticker}), 404
+
+    # The CLI's --deep-analyze command should have pre-calculated all necessary fields.
+    # This API endpoint is now primarily for serving that cached data quickly.
     
-    stock_data = df[df['ticker'] == ticker.upper()]
-    if stock_data.empty:
-        return jsonify({'error': f'Stock {ticker} not found'}), 404
-    
-    stock_record = stock_data.to_dict('records')[0]
-    
-    # Convert history data to expected format if it exists
-    if stock_record.get('history') and isinstance(stock_record['history'], dict):
-        history_dict = stock_record['history']
-        if 'close' in history_dict and 'dates' in history_dict:
-            # Convert to array of objects format
-            dates = history_dict['dates']
-            prices = history_dict['close']
-            stock_record['history'] = [
-                {'date': date, 'price': price} 
-                for date, price in zip(dates, prices)
-            ]
-        else:
-            # If data format is unexpected, set to empty array
-            stock_record['history'] = []
-    
-    # Extract current volume from historical data if available
+    # We still need to extract the latest volume for the main display,
+    # as the 'volume' field in the cache might be stale or represent an average.
     if 'historical_data' in stock_record and isinstance(stock_record['historical_data'], dict):
         hist_data = stock_record['historical_data']
-        if 'volume' in hist_data and hist_data['volume']:
-            # Add current volume (last day) to the response
+        if hist_data.get('volume') and len(hist_data['volume']) > 0:
             stock_record['volume'] = hist_data['volume'][-1]
-            stock_record['prev_close'] = hist_data['close'][-2] if len(hist_data['close']) > 1 else hist_data['close'][-1]
-            
-            # Add enhanced volume analysis using VolumeAnalyzer
-            try:
-                volume_analyzer = VolumeAnalyzer()
-                # Create DataFrame for volume analysis
-                volume_df = pd.DataFrame({
-                    'Close': hist_data['close'],
-                    'Volume': hist_data['volume'], 
-                    'High': hist_data['high'],
-                    'Low': hist_data['low']
-                }, index=pd.to_datetime(hist_data['dates']))
-                
-                # Get comprehensive volume analysis
-                volume_analysis = volume_analyzer.analyze_volume_patterns(volume_df, ticker.upper())
-                stock_record['volume_analysis'] = volume_analysis
-                print(f"✅ Enhanced volume analysis added for {ticker}")
-                
-            except Exception as vol_error:
-                print(f"⚠️ Error calculating volume analysis for {ticker}: {vol_error}")
-                stock_record['volume_analysis'] = {}
-        else:
-            stock_record['volume'] = stock_record.get('avg_volume', 0)
-            stock_record['prev_close'] = stock_record.get('current_price', 0)
-            stock_record['volume_analysis'] = {}
-    else:
-        # Fallback to avg_volume if no historical data
-        stock_record['volume'] = stock_record.get('avg_volume', 0)
-        stock_record['prev_close'] = stock_record.get('current_price', 0)
-        stock_record['volume_analysis'] = {}
-    
-    # Try to get enhanced scoring data from the new 4-layer system
-    try:
-        # Load enhanced scoring data
-        with open('cache/stock_data.json', 'r') as f:
-            enhanced_data = json.load(f)
         
-        if ticker.upper() in enhanced_data:
-            ticker_data = enhanced_data[ticker.upper()]
-            
-            # Initialize composite scorer for enhanced analysis
-            composite_scorer = CompositeScorer()
-            
-            # Get enhanced scoring breakdown  
-            try:
-                # Build DataFrame from ticker_data
-                if 'historical_data' in ticker_data:
-                    hist_data = ticker_data['historical_data']
-                    df = pd.DataFrame({
-                        'Close': hist_data['close'],
-                        'Volume': hist_data['volume'], 
-                        'High': hist_data['high'],
-                        'Low': hist_data['low']
-                    }, index=pd.to_datetime(hist_data['dates']))
-                    
-                    enhanced_score, enhanced_score_result = composite_scorer.calculate_composite_score(df, ticker.upper())
-                
-                    # Add enhanced scoring data to the response
-                    if enhanced_score_result:
-                        stock_record.update({
-                            'layer_scores': enhanced_score_result.get('layer_scores', {}),
-                            'layer_details': enhanced_score_result.get('layer_details', {}),
-                            'investment_recommendation': enhanced_score_result.get('investment_recommendation', {}),
-                            'methodology_compliance': enhanced_score_result.get('methodology_compliance', {}),
-                            'overall_grade': enhanced_score_result.get('overall_grade', 'F'),
-                            'enhanced_score': enhanced_score
-                        })
-                        print(f"✅ Enhanced scoring data added for {ticker}")
-                    else:
-                        print(f"⚠️ No enhanced scoring result for {ticker}")
-                else:
-                    print(f"⚠️ No historical data for {ticker}")
-                    
-            except Exception as scoring_error:
-                print(f"❌ Error calculating enhanced score for {ticker}: {scoring_error}")
-                # Add default enhanced scoring structure
-                stock_record.update({
-                    'layer_scores': {'quality_gate': 0, 'dip_signal': 0, 'reversal_spark': 0, 'risk_adjustment': 0},
-                    'layer_details': {},
-                    'investment_recommendation': {'action': 'AVOID', 'confidence': 'high', 'reason': 'Scoring error'},
-                    'methodology_compliance': {'passes_quality_gate': False, 'in_dip_sweet_spot': False, 'has_reversal_signals': False},
-                    'overall_grade': 'F',
-                    'enhanced_score': 0
-                })
-        else:
-            print(f"⚠️ No enhanced data found for {ticker}")
-                
-    except Exception as e:
-        print(f"❌ Error loading enhanced data for {ticker}: {e}")
-    
+        if hist_data.get('close') and len(hist_data['close']) > 1:
+             stock_record['prev_close'] = hist_data['close'][-2]
+
+    # Ensure the 'price' field expected by the frontend exists.
+    if 'price' not in stock_record and 'current_price' in stock_record:
+        stock_record['price'] = stock_record['current_price']
+    elif 'price' not in stock_record:
+        stock_record['price'] = 0 # Fallback to 0 if no price info is found
+
+    # Ensure volume_analysis object exists to prevent frontend errors
+    if 'volume_analysis' not in stock_record or not stock_record['volume_analysis']:
+        stock_record['volume_analysis'] = {
+            'volume_spike_ratio': stock_record.get('volume', 0) / stock_record.get('avg_volume', 1) if stock_record.get('avg_volume') else 0,
+            'capitulation_signal': False,
+            'accumulation_signal': False,
+            'volume_trend_10d': 'stable'
+        }
+
+    # Format historical data for the frontend chart component
+    if 'historical_data' in stock_record and isinstance(stock_record['historical_data'], dict):
+        hist_data = stock_record['historical_data']
+        dates = hist_data.get('dates', [])
+        prices = hist_data.get('close', [])
+        stock_record['history'] = [
+            {'date': date, 'price': price}
+            for date, price in zip(dates, prices)
+        ]
+
+    # The 'volume_analysis' and scoring details should already be present
+    # in the stock_record from the `load_processed_data` merge.
+    # We avoid recalculating them here to prevent API timeouts.
+
     # Clean the data to prevent NaN JSON serialization errors
     cleaned_record = clean_data_for_json(stock_record)
     

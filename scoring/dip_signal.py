@@ -62,12 +62,18 @@ class DipSignal:
             Tuple of (dip_score, dip_details)
         """
         try:
+            # THE FIX: Get the nested stock_data record
+            stock_data = enhanced_data.get('ticker_data', {})
+            if not stock_data:
+                return 0, self._empty_dip_details()
+
             # Get technical and volume data (from Phase 1 or fresh)
-            if enhanced_data and 'enhanced_tech' in enhanced_data:
-                tech_data = enhanced_data['enhanced_tech']
-                volume_data = enhanced_data.get('enhanced_volume', {})
-            else:
+            tech_data = enhanced_data.get('enhanced_tech', {})
+            if not tech_data:
                 tech_data = self.tech_indicators.calculate_all_indicators(df, ticker)
+            
+            volume_data = stock_data.get('volume_analysis', {})
+            if not volume_data:
                 volume_data = self.volume_analyzer.analyze_volume_patterns(df, ticker)
             
             # Calculate each dip component
@@ -108,13 +114,13 @@ class DipSignal:
         # Primary metric: % below 52-week high
         drop_52w = tech_data.get('percent_below_52w_high', 0)
         
-        if drop_52w >= 15 and drop_52w <= 40:
+        if 15 <= drop_52w <= 40:
             # Sweet spot: 15-40% drop gets maximum points
-            if drop_52w >= 20 and drop_52w <= 30:
+            if 20 <= drop_52w <= 30:
                 score += max_score  # Perfect dip zone
             else:
                 score += max_score * 0.85  # Good dip zone
-        elif drop_52w > 40 and drop_52w <= 60:
+        elif 40 < drop_52w <= 60:
             score += max_score * 0.6  # Deeper dip, more risk
         elif drop_52w > 60:
             score += max_score * 0.3  # Too deep, structural concerns
@@ -167,9 +173,9 @@ class DipSignal:
         # Volume ratio (current vs average)
         volume_ratio = volume_data.get('volume_ratio_current', 1.0)
         
-        if volume_ratio >= 1.5 and volume_ratio <= 3.0:
+        if 1.5 <= volume_ratio <= 3.0:
             # Sweet spot: 1.5x-3x volume spike
-            if volume_ratio >= 2.0 and volume_ratio <= 2.5:
+            if 2.0 <= volume_ratio <= 2.5:
                 score += 6  # Perfect volume signature
             else:
                 score += 5  # Good volume spike
@@ -228,8 +234,8 @@ class DipSignal:
         
         # Quality dip
         elif (10 <= drop_52w <= 50 and 
-              rsi_14 < 35 and 
-              volume_ratio >= 1.2):
+            rsi_14 < 35 and 
+            volume_ratio >= 1.2):
             return 'quality_dip'
         
         # Mild dip
@@ -303,4 +309,4 @@ class DipSignal:
             'in_sweet_spot': False,
             'dip_grade': 'F',
             'key_levels': {}
-        } 
+        }

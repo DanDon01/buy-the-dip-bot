@@ -406,7 +406,7 @@ const StockDetailPage = () => {
           </div>
           
           {/* Check if volume data is available */}
-          {(!stock.volume || !stock.avg_volume || isNaN(stock.volume) || isNaN(stock.avg_volume)) ? (
+          {(!stock.volume_analysis || !stock.volume || !stock.avg_volume || isNaN(stock.volume) || isNaN(stock.avg_volume)) ? (
             <div className="bg-amber-900/50 border border-amber-700 p-6 rounded-lg">
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-amber-400 text-xl">⚠️</span>
@@ -427,229 +427,120 @@ const StockDetailPage = () => {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
-              {/* Volume Spike Analysis */}
-              <div className="bg-slate-700 border border-slate-600 p-6 rounded-lg">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-red-400">📊</span>
-                  <h3 className="text-lg font-semibold text-white">Volume Spike Detection</h3>
-                </div>
-                
-                <div className="space-y-4">
-                  {/* Current Volume vs Average */}
-                  <div className="bg-slate-800 p-4 rounded-lg">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-slate-300">Current vs Average</span>
-                      <span className={`font-bold text-lg ${
-                        (stock.volume / stock.avg_volume) >= 2.0 ? 'text-red-400' :
-                        (stock.volume / stock.avg_volume) >= 1.5 ? 'text-orange-400' :
-                        (stock.volume / stock.avg_volume) >= 1.2 ? 'text-yellow-400' : 'text-slate-400'
-                      }`}>
-                        {(stock.volume / stock.avg_volume).toFixed(1)}x
-                      </span>
+              {/* Left Column: Spike Detection & Sweet Spot */}
+              <div className="space-y-6">
+                {/* Volume Spike Detection */}
+                <div className="bg-slate-700/50 border border-slate-600 p-6 rounded-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="text-xl">📊</span>
+                    <h3 className="text-lg font-semibold text-white">Volume Spike Detection</h3>
+                  </div>
+                  <div className="bg-slate-800 p-4 rounded-lg text-center">
+                    <div className="text-slate-300 text-sm mb-1">Current vs 20-Day Avg</div>
+                    <div className={`font-bold text-4xl ${
+                      stock.volume_analysis.volume_spike_ratio >= 2.0 ? 'text-red-400' :
+                      stock.volume_analysis.volume_spike_ratio >= 1.5 ? 'text-orange-400' :
+                      stock.volume_analysis.volume_spike_ratio >= 1.2 ? 'text-yellow-400' : 'text-green-400'
+                    }`}>
+                      {stock.volume_analysis.volume_spike_ratio.toFixed(2)}x
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-slate-400 mt-1">
                       Current: {(stock.volume / 1000000).toFixed(1)}M | Avg: {(stock.avg_volume / 1000000).toFixed(1)}M
                     </div>
-                    
-                    {/* Volume Classification */}
-                    <div className="mt-3">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        (stock.volume / stock.avg_volume) >= 3.0 ? 'bg-red-900 text-red-300' :
-                        (stock.volume / stock.avg_volume) >= 2.0 ? 'bg-orange-900 text-orange-300' :
-                        (stock.volume / stock.avg_volume) >= 1.5 ? 'bg-yellow-900 text-yellow-300' :
-                        (stock.volume / stock.avg_volume) >= 1.2 ? 'bg-blue-900 text-blue-300' : 'bg-slate-700 text-slate-400'
-                      }`}>
-                        {
-                          (stock.volume / stock.avg_volume) >= 3.0 ? '🚨 Extreme Spike' :
-                          (stock.volume / stock.avg_volume) >= 2.0 ? '🔥 Strong Spike' :
-                          (stock.volume / stock.avg_volume) >= 1.5 ? '⚡ Moderate Spike' :
-                          (stock.volume / stock.avg_volume) >= 1.2 ? '📈 Mild Increase' : '😴 Normal Volume'
-                        }
-                      </span>
-                    </div>
                   </div>
+                </div>
+
+                {/* Dip Hunting Sweet Spot */}
+                <div className="bg-slate-700/50 border border-slate-600 p-6 rounded-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="text-xl">📍</span>
+                    <h3 className="text-lg font-semibold text-white">Dip Hunting Sweet Spot</h3>
+                  </div>
+                  <div className="text-sm text-slate-400 mb-4">Optimal volume range: 1.5x - 3.0x average for dip opportunities.</div>
                   
-                  {/* Sweet Spot Indicator */}
-                  <div className={`p-3 rounded-lg border-2 ${
-                    (stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ?
-                    'border-green-500 bg-green-900/30' : 'border-slate-600 bg-slate-800'
-                  }`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-lg ${
-                        (stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ?
-                        'text-green-400' : 'text-slate-400'
-                      }`}>
-                        {(stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ? '🎯' : '📍'}
-                      </span>
-                      <span className={`font-medium ${
-                        (stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) <= 3.0 ?
-                        'text-green-300' : 'text-slate-400'
-                      }`}>
-                        Dip Hunting Sweet Spot
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-400">
-                      Optimal volume range: 1.5x - 3.0x average for dip opportunities
-                    </div>
+                  <div className="bg-slate-800 p-4 rounded-lg">
+                    {(() => {
+                      const ratio = stock.volume_analysis.volume_spike_ratio;
+                      let statusText = "Below Range";
+                      let statusColor = "text-slate-400";
+                      let progress = (ratio / 4.0) * 100; // Max out at 4.0x for visual
+                      
+                      if (ratio >= 1.5 && ratio <= 3.0) {
+                        statusText = "In Sweet Spot";
+                        statusColor = "text-green-400";
+                      } else if (ratio > 3.0) {
+                        statusText = "Above Range";
+                        statusColor = "text-yellow-400";
+                      }
+                    
+                      return (
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-slate-300">Current Ratio: <span className="font-bold text-white">{ratio.toFixed(2)}x</span></span>
+                            <span className={`font-semibold ${statusColor}`}>{statusText}</span>
+                          </div>
+                          <div className="w-full bg-slate-900 rounded-full h-4 relative">
+                            <div className="absolute left-0 top-0 h-4 w-full flex items-center justify-center text-xs text-white z-10">
+                              1.5x &mdash;&mdash;&mdash;&mdash; SWEET SPOT &mdash;&mdash;&mdash;&mdash; 3.0x
+                            </div>
+                            <div className="bg-blue-800/50 h-4 rounded-full" style={{ width: '100%' }}>
+                              <div className="bg-slate-600 absolute h-4 rounded-l-full" style={{ width: '37.5%' }} /> {/* 1.5 / 4.0 */}
+                              <div className="bg-green-600/80 absolute h-4" style={{ left: '37.5%', width: '37.5%' }} /> {/* (3.0-1.5)/4.0 */}
+                            </div>
+                            <div className={`absolute top-0 h-4 w-2 -ml-1 bg-white rounded-full shadow-lg border-2 border-slate-800`} style={{ left: `${Math.min(progress, 100)}%` }}/>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
-              
-              {/* Volume Signals & Patterns */}
-              <div className="bg-slate-700 border border-slate-600 p-6 rounded-lg">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-green-400">🔍</span>
-                  <h3 className="text-lg font-semibold text-white">Volume Signals</h3>
+
+              {/* Right Column: Signals */}
+              <div className="bg-slate-700/50 border border-slate-600 p-6 rounded-lg space-y-4">
+                <div className="flex items-center gap-3 mb-2">
+                    <span className="text-xl">📡</span>
+                    <h3 className="text-lg font-semibold text-white">Volume Signals</h3>
                 </div>
-                
-                <div className="space-y-3">
-                  {/* Capitulation Signal */}
-                  <div className={`p-3 rounded-lg ${
-                    (stock.volume / stock.avg_volume) >= 2.0 && 
-                    stock.prev_close && ((stock.price - stock.prev_close) / stock.prev_close) * 100 <= -3.0 ?
-                    'bg-red-900/50 border border-red-700' : 'bg-slate-800'
-                  }`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-red-400">💥</span>
-                        <span className="text-sm font-medium text-white">Capitulation Signal</span>
-                      </div>
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        (stock.volume / stock.avg_volume) >= 2.0 && 
-                        stock.prev_close && ((stock.price - stock.prev_close) / stock.prev_close) * 100 <= -3.0 ?
-                        'bg-red-800 text-red-200' : 'bg-slate-700 text-slate-400'
-                      }`}>
-                        {(stock.volume / stock.avg_volume) >= 2.0 && 
-                         stock.prev_close && ((stock.price - stock.prev_close) / stock.prev_close) * 100 <= -3.0 ? 'ACTIVE' : 'Inactive'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      High volume + significant price drop = potential selling climax
-                    </div>
+
+                {/* Capitulation Signal */}
+                <div className={`p-4 rounded-lg flex justify-between items-center transition-all ${stock.volume_analysis.capitulation_signal ? 'bg-red-900/70 border border-red-700' : 'bg-slate-800'}`}>
+                  <div>
+                    <div className="font-semibold text-white">Capitulation Signal</div>
+                    <div className="text-xs text-slate-400">High volume + price drop = selling climax</div>
                   </div>
-                  
-                  {/* Accumulation Signal */}
-                  <div className={`p-3 rounded-lg ${
-                    (stock.volume / stock.avg_volume) >= 1.3 &&
-                    stock.prev_close && Math.abs(((stock.price - stock.prev_close) / stock.prev_close) * 100) <= 2.0 ?
-                    'bg-green-900/50 border border-green-700' : 'bg-slate-800'
-                  }`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-green-400">📈</span>
-                        <span className="text-sm font-medium text-white">Accumulation Signal</span>
-                      </div>
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        (stock.volume / stock.avg_volume) >= 1.3 &&
-                        stock.prev_close && Math.abs(((stock.price - stock.prev_close) / stock.prev_close) * 100) <= 2.0 ?
-                        'bg-green-800 text-green-200' : 'bg-slate-700 text-slate-400'
-                      }`}>
-                        {(stock.volume / stock.avg_volume) >= 1.3 &&
-                         stock.prev_close && Math.abs(((stock.price - stock.prev_close) / stock.prev_close) * 100) <= 2.0 ? 'ACTIVE' : 'Inactive'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      Above average volume + price stability = smart money buying
-                    </div>
-                  </div>
-                  
-                  {/* Volume Trend */}
-                  <div className="p-3 rounded-lg bg-slate-800">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-blue-400">📊</span>
-                        <span className="text-sm font-medium text-white">Volume Trend</span>
-                      </div>
-                      <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
-                        {(stock.volume / stock.avg_volume) > 1.2 ? '📈 Increasing' : 
-                         (stock.volume / stock.avg_volume) < 0.8 ? '📉 Decreasing' : '➡️ Stable'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      Current vs historical average volume trend
-                    </div>
-                  </div>
+                  <span className={`px-3 py-1 text-sm font-bold rounded-full ${stock.volume_analysis.capitulation_signal ? 'bg-red-400 text-red-900' : 'bg-slate-700 text-slate-300'}`}>
+                    {stock.volume_analysis.capitulation_signal ? 'ACTIVE' : 'Inactive'}
+                  </span>
                 </div>
-              </div>
-              
-              {/* Volume Metrics Summary */}
-              <div className="lg:col-span-2">
-                <div className="bg-slate-700 border border-slate-600 p-6 rounded-lg">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-yellow-400">📋</span>
-                    <h3 className="text-lg font-semibold text-white">Volume Analysis Summary</h3>
+
+                {/* Accumulation Signal */}
+                <div className={`p-4 rounded-lg flex justify-between items-center transition-all ${stock.volume_analysis.accumulation_signal ? 'bg-green-900/70 border border-green-700' : 'bg-slate-800'}`}>
+                  <div>
+                    <div className="font-semibold text-white">Accumulation Signal</div>
+                    <div className="text-xs text-slate-400">Above average volume + price stability</div>
                   </div>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {/* Current Volume */}
-                    <div className="text-center p-3 bg-slate-800 rounded-lg">
-                      <div className="text-lg font-bold text-white">
-                        {(stock.volume / 1000000).toFixed(1)}M
-                      </div>
-                      <div className="text-xs text-slate-400">Current Volume</div>
-                    </div>
-                    
-                    {/* Average Volume */}
-                    <div className="text-center p-3 bg-slate-800 rounded-lg">
-                      <div className="text-lg font-bold text-white">
-                        {(stock.avg_volume / 1000000).toFixed(1)}M
-                      </div>
-                      <div className="text-xs text-slate-400">Historical Average</div>
-                    </div>
-                    
-                    {/* Volume Ratio */}
-                    <div className="text-center p-3 bg-slate-800 rounded-lg">
-                      <div className={`text-lg font-bold ${
-                        (stock.volume / stock.avg_volume) >= 2.0 ? 'text-red-400' :
-                        (stock.volume / stock.avg_volume) >= 1.5 ? 'text-orange-400' :
-                        'text-white'
-                      }`}>
-                        {(stock.volume / stock.avg_volume).toFixed(2)}x
-                      </div>
-                      <div className="text-xs text-slate-400">Volume Ratio</div>
-                    </div>
-                    
-                    {/* Dip Opportunity Indicator */}
-                    <div className="text-center p-3 bg-slate-800 rounded-lg">
-                      <div className={`text-lg font-bold ${
-                        (stock.volume / stock.avg_volume) >= 1.5 && 
-                        (stock.volume / stock.avg_volume) <= 3.0 ?
-                        'text-green-400' : 'text-slate-400'
-                      }`}>
-                        {(stock.volume / stock.avg_volume) >= 1.5 && 
-                         (stock.volume / stock.avg_volume) <= 3.0 ? '🎯' : '⏸️'}
-                      </div>
-                      <div className="text-xs text-slate-400">Dip Opportunity</div>
-                    </div>
+                  <span className={`px-3 py-1 text-sm font-bold rounded-full ${stock.volume_analysis.accumulation_signal ? 'bg-green-400 text-green-900' : 'bg-slate-700 text-slate-300'}`}>
+                    {stock.volume_analysis.accumulation_signal ? 'ACTIVE' : 'Inactive'}
+                  </span>
+                </div>
+
+                {/* Volume Trend */}
+                <div className="bg-slate-800 p-4 rounded-lg flex justify-between items-center">
+                  <div>
+                    <div className="font-semibold text-white">Volume Trend (10-Day)</div>
+                    <div className="text-xs text-slate-400">Current vs historical volume trend</div>
                   </div>
-                  
-                  {/* Volume Interpretation */}
-                  <div className="mt-4 p-4 bg-slate-800 rounded-lg">
-                    <h4 className="text-sm font-semibold text-white mb-2">💡 Volume Analysis Interpretation</h4>
-                    <div className="text-sm text-slate-300 space-y-1">
-                      {(stock.volume / stock.avg_volume) >= 3.0 && (
-                        <div className="flex items-start gap-2">
-                          <span className="text-red-400 mt-0.5">⚠️</span>
-                          <span>Extreme volume spike may indicate distribution or panic selling. Exercise caution.</span>
-                        </div>
-                      )}
-                      {(stock.volume / stock.avg_volume) >= 1.5 && (stock.volume / stock.avg_volume) < 3.0 && (
-                        <div className="flex items-start gap-2">
-                          <span className="text-green-400 mt-0.5">✅</span>
-                          <span>Volume in optimal range for dip opportunities. Increased interest with controlled selling.</span>
-                        </div>
-                      )}
-                      {(stock.volume / stock.avg_volume) < 1.5 && (
-                        <div className="flex items-start gap-2">
-                          <span className="text-yellow-400 mt-0.5">📊</span>
-                          <span>Normal to low volume. May lack conviction for significant price movement.</span>
-                        </div>
-                      )}
-                      <div className="flex items-start gap-2">
-                        <span className="text-blue-400 mt-0.5">💭</span>
-                        <span>Volume analysis works best when combined with price action and technical indicators.</span>
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                        const trend = stock.volume_analysis.volume_trend_10d;
+                        if (trend === 'increasing') return <span className="text-lg text-green-400">▲</span>;
+                        if (trend === 'decreasing') return <span className="text-lg text-red-400">▼</span>;
+                        return <span className="text-lg text-slate-400">=</span>;
+                    })()}
+                    <span className="px-3 py-1 text-sm font-bold rounded-full bg-slate-700 text-slate-300 capitalize">
+                      {stock.volume_analysis.volume_trend_10d}
+                    </span>
                   </div>
                 </div>
               </div>

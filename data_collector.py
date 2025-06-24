@@ -8,6 +8,7 @@ from utils import (
     ensure_cache_dir,
     calculate_score,
     load_valid_tickers,
+    clean_data_for_json,
 )
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -469,9 +470,12 @@ class DataCollector:
             except Exception as e:
                 print(f"\nError calculating score for {ticker}: {str(e)}")
         
+        # Clean the data for JSON serialization before saving
+        cleaned_scores = clean_data_for_json(scores)
+        
         # Save daily scores
         with open(self.scores_file, 'w') as f:
-            json.dump(scores, f, indent=4)
+            json.dump(cleaned_scores, f, indent=4)
         
         # Update last daily update timestamp
         if os.path.exists(self.last_update_file):
