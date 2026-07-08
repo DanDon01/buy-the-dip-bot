@@ -1,5 +1,5 @@
 import pandas as pd
-from yahooquery import Ticker
+from market_data import Ticker
 import json
 import os
 from utils import (
@@ -103,9 +103,9 @@ class DataCollector:
                 if attempt > 0:
                     time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
                 
-                # Get basic info with yahooquery
+                # Get basic info via market_data (yfinance-backed)
                 stock = Ticker(cleaned_ticker)
-                # yahooquery sometimes returns a string like "No summary detail found"
+                # Yahoo sometimes returns a string like "No summary detail found"
                 raw_summary = stock.summary_detail.get(cleaned_ticker, {})
                 raw_price   = stock.price.get(cleaned_ticker, {})
                 # ENHANCED: Fetch additional data sources for comprehensive metrics
@@ -787,7 +787,7 @@ class DataCollector:
         year_high = price_info.get("fiftyTwoWeekHigh")
         year_low = price_info.get("fiftyTwoWeekLow")
 
-        # Keep year_high and year_low as None if not available from yahooquery
+        # Keep year_high and year_low as None if not available from Yahoo
         # No more yfinance fallback to maintain API consistency
 
         # Fundamental extras

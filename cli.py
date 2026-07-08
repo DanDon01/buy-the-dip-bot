@@ -19,6 +19,22 @@
     python cli.py --analyze --ticker AAPL         # Analyze specific stock
     python cli.py --cleanup                       # Organize scattered files
 
+🧪 BACKTESTING & OPTIMIZATION:
+    python cli.py --backtest --top 10 --period 2y  # Validate methodology historically
+    python cli.py --optimize-weights [--apply]     # ML-optimize score weights
+
+🔔 ALERTS & MARKET CONTEXT:
+    python cli.py --check-alerts --threshold 75    # Email/SMS/webhook buy alerts
+    python cli.py --sectors                        # Sector rotation analysis
+    python cli.py --news --ticker AAPL             # News sentiment
+    python cli.py --options --ticker AAPL          # Options chain signals
+
+💼 PORTFOLIO:
+    python cli.py --portfolio                      # Holdings & P&L
+    python cli.py --portfolio-add AAPL --shares 10 --price 150
+    python cli.py --portfolio-sell AAPL --price 170
+    python cli.py --position-size AAPL             # Risk-based sizing suggestion
+
 🎯 COMMON PARAMETERS:
     --top N         # Number of stocks to process (default: 100)
     --ticker SYMBOL # Specific stock ticker for analysis
@@ -777,6 +793,177 @@ class BuyTheDipCLI:
             print("   1. python cli.py --screen --top 500")
             print("   2. python cli.py --deep-analyze --top 50")
 
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # 🚀 2026 FEATURE SET: BACKTESTING, ALERTS, PORTFOLIO, SECTORS, NEWS, OPTIONS
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    def _backtest_universe(self, top_n: int) -> List[str]:
+        """Pick tickers for the backtest: screening list > cached stock data."""
+        try:
+            tickers = self.master_list_manager.get_screening_list(top_n)
+            if tickers:
+                return tickers[:top_n]
+        except Exception:
+            pass
+        stock_data_file = self.cache_dir / "stock_data.json"
+        if stock_data_file.exists():
+            with open(stock_data_file, 'r') as f:
+                return list(json.load(f).keys())[:top_n]
+        return []
+
+    def run_backtest(self, top_n: int, period: str, hold_days: int, rebalance_days: int):
+        """Run the historical backtest and save a report."""
+        from backtesting import BacktestConfig, fetch_and_run, save_report
+
+        self.print_header(f"BACKTEST - {period} HISTORY, {hold_days}-DAY HOLDS")
+        tickers = self._backtest_universe(max(top_n, 50))
+        if not tickers:
+            self.print_error("No ticker universe available. Run --build-master-list or --collect-data first.")
+            return
+
+        print(f"   🎯 Universe: {len(tickers)} tickers | period {period} | "
+              f"hold {hold_days}d | rebalance every {rebalance_days}d")
+        config = BacktestConfig(top_n=min(top_n, 20), hold_days=hold_days,
+                                rebalance_days=rebalance_days)
+        result = fetch_and_run(tickers, period=period, config=config)
+
+        summary = result.get('summary', {})
+        if not summary.get('total_trades'):
+            self.print_warning("Backtest produced no trades (not enough history or no qualifying dips).")
+            return
+
+        path = save_report(result)
+        self.print_success(f"Backtest complete - {summary['total_trades']} trades")
+        print(f"   📈 Win rate:        {summary.get('win_rate_pct', 'n/a')}%")
+        print(f"   💰 Avg return:      {summary.get('avg_return_pct', 'n/a')}% per trade")
+        print(f"   ⚖️  Avg vs SPY:      {summary.get('avg_excess_return_pct', 'n/a')}%")
+        print(f"   📊 Sharpe:          {summary.get('sharpe_ratio', 'n/a')}")
+        print(f"   📉 Max drawdown:    {summary.get('max_drawdown_pct', 'n/a')}%")
+        print(f"   📁 Report: {path}")
+        print(f"   💡 Next: python cli.py --optimize-weights")
+
+    def check_alerts(self, threshold: float, dry_run: bool = False):
+        """Scan latest scores and send buy-condition alerts."""
+        from alerts import AlertManager
+        self.print_header(f"ALERTS - THRESHOLD {threshold}")
+        AlertManager(threshold=threshold).check_and_send(dry_run=dry_run)
+
+    def show_sectors(self):
+        """Refresh and display sector rotation rankings."""
+        from analysis.sector_rotation import refresh_sector_rotation
+        self.print_header("SECTOR ROTATION ANALYSIS")
+        data = refresh_sector_rotation()
+        if not data:
+            self.print_error("Could not fetch sector ETF data (network/API issue).")
+            return
+        bench = data['benchmark']
+        print(f"   SPY: 1m {bench['return_1m_pct']}% | 3m {bench['return_3m_pct']}% | 6m {bench['return_6m_pct']}%\n")
+        print(f"   {'Rank':<5}{'Sector':<26}{'ETF':<6}{'1m RS':>8}{'3m RS':>8}  Phase")
+        for s in data['sectors']:
+            print(f"   {s['momentum_rank']:<5}{s['sector']:<26}{s['etf']:<6}"
+                  f"{s['rel_strength_1m_pct'] if s['rel_strength_1m_pct'] is not None else 'n/a':>8}"
+                  f"{s['rel_strength_3m_pct'] if s['rel_strength_3m_pct'] is not None else 'n/a':>8}"
+                  f"  {s['phase']}")
+        print(f"\n   💾 Cached to cache/sector_rotation.json (feeds risk-modifier scoring)")
+
+    def show_news(self, ticker: str):
+        """Fetch and display news sentiment for a ticker."""
+        from collectors.news_sentiment import NewsSentimentCollector
+        self.print_header(f"NEWS SENTIMENT - {ticker.upper()}")
+        summary = NewsSentimentCollector().get_sentiment(ticker)
+        print(f"   Sentiment: {summary['label']} ({summary['sentiment_score']:+.3f})")
+        print(f"   Articles: {summary['article_count']} "
+              f"(+{summary['positive']} / -{summary['negative']} / ={summary['neutral']})")
+        for h in summary.get('headlines', [])[:8]:
+            print(f"   [{h['sentiment']:+.2f}] {h['headline'][:90]}")
+
+    def show_options(self, ticker: str):
+        """Fetch and display options chain signals for a ticker."""
+        from collectors.options_data import OptionsDataCollector
+        self.print_header(f"OPTIONS SIGNALS - {ticker.upper()}")
+        data = OptionsDataCollector().get_options_summary(ticker)
+        if not data.get('available'):
+            self.print_warning(f"No options data available for {ticker}")
+            return
+        print(f"   Expiration: {data['expiration']} | Spot: ${data['spot_price']}")
+        print(f"   Put/Call volume ratio: {data['put_call_volume_ratio']}")
+        print(f"   Put/Call OI ratio:     {data['put_call_oi_ratio']}")
+        print(f"   ATM IV (call/put):     {data['atm_call_iv']} / {data['atm_put_iv']}")
+        print(f"   IV skew:               {data['iv_skew']}")
+        print(f"   Max pain strike:       {data['max_pain_strike']}")
+        for name, signal in (data.get('signals') or {}).items():
+            print(f"   🔎 {name}: {signal}")
+
+    def optimize_weights(self, apply_to_config: bool):
+        """Learn better score weights from the latest backtest."""
+        from optimization import optimize_from_backtest
+        self.print_header("ML WEIGHT OPTIMIZATION")
+        try:
+            result = optimize_from_backtest(apply_to_config=apply_to_config)
+        except (FileNotFoundError, ValueError) as e:
+            self.print_error(str(e))
+            return
+        report = result['report']
+        print(f"   Trades analyzed:  {report['n_trades']}")
+        print(f"   IC (optimized):   {report['information_coefficient']}"
+              f"  vs equal-weight baseline {report['baseline_ic_equal_weights']}")
+        print(f"   Top-quartile avg: {report['top_quartile_avg_return_pct']}%"
+              f"  vs all trades {report['all_trades_avg_return_pct']}%")
+        print(f"\n   🎯 Optimized component weights:")
+        for k, v in result['optimized_weights'].items():
+            print(f"      {k:<8} {v:5.1f}")
+        print(f"\n   📁 Saved to config/optimized_weights.json"
+              + (" and applied to config/scoring_parameters.json" if apply_to_config else
+                 "\n   💡 Re-run with --apply to update live scoring parameters"))
+
+    def show_portfolio(self):
+        """Display current holdings and P&L."""
+        from portfolio import Portfolio
+        self.print_header("PORTFOLIO")
+        summary = Portfolio().summary()
+        if not summary['positions']:
+            print("   (no open positions - add one with --portfolio-add TICKER --shares N --price P)")
+        else:
+            print(f"   {'Ticker':<8}{'Shares':>10}{'Avg Cost':>10}{'Price':>10}{'Value':>12}{'P&L':>10}{'P&L %':>8}")
+            for p in summary['positions']:
+                price = f"{p['current_price']:.2f}" if p['current_price'] else "n/a"
+                pnl = f"{p['unrealized_pnl']:+.2f}" if p['unrealized_pnl'] is not None else "n/a"
+                pnl_pct = f"{p['unrealized_pnl_pct']:+.1f}%" if p['unrealized_pnl_pct'] is not None else "n/a"
+                print(f"   {p['ticker']:<8}{p['shares']:>10.2f}{p['avg_cost']:>10.2f}"
+                      f"{price:>10}{p['market_value']:>12.2f}{pnl:>10}{pnl_pct:>8}")
+            print(f"\n   Total value:      ${summary['total_market_value']:,.2f}")
+            print(f"   Unrealized P&L:   ${summary['total_unrealized_pnl']:+,.2f}")
+        print(f"   Realized P&L:     ${summary['total_realized_pnl']:+,.2f}")
+
+    def portfolio_add(self, ticker: str, shares: float, price: float):
+        from portfolio import Portfolio
+        pos = Portfolio().add_position(ticker, shares, price)
+        self.print_success(f"Bought {shares} {ticker.upper()} @ ${price:.2f} "
+                           f"(now {pos['shares']} shares, avg cost ${pos['avg_cost']:.2f})")
+
+    def portfolio_sell(self, ticker: str, shares: Optional[float], price: float):
+        from portfolio import Portfolio
+        trade = Portfolio().sell_position(ticker, shares, price)
+        self.print_success(f"Sold {trade['shares']} {ticker.upper()} @ ${price:.2f} - "
+                           f"realized P&L ${trade['realized_pnl']:+.2f} ({trade['realized_pnl_pct']:+.1f}%)")
+
+    def show_position_size(self, ticker: str):
+        """Show a risk-based position sizing suggestion."""
+        from portfolio import position_size_for_ticker
+        self.print_header(f"POSITION SIZING - {ticker.upper()}")
+        try:
+            s = position_size_for_ticker(ticker)
+        except KeyError as e:
+            self.print_error(str(e))
+            return
+        print(f"   Suggested shares:  {s['shares']}")
+        print(f"   Position value:    ${s['position_value']:,.2f} "
+              f"({s['position_pct_of_capital']}% of capital)")
+        print(f"   Stop-loss price:   ${s['stop_price']} "
+              f"(risking ${s['risk_budget']:,.2f})")
+        print(f"   Conviction:        {s['conviction_multiplier']}x"
+              + ("  ⚠️ capped by max position size" if s['capped_by_max_position'] else ""))
+
     def _load_filtered_tickers(self, top_n: int) -> List[str]:
         """Load tickers from existing filter files for backward compatibility."""
         try:
@@ -842,6 +1029,44 @@ def main():
     parser.add_argument('--deep-analyze', action='store_true',
                        help='Tier 3: Deep analysis with full data collection for final picks')
     
+    # 2026 feature set
+    parser.add_argument('--backtest', action='store_true',
+                       help='Run historical backtest of the dip methodology')
+    parser.add_argument('--period', type=str, default='2y',
+                       help='History period for --backtest (e.g. 1y, 2y, 5y)')
+    parser.add_argument('--hold', type=int, default=21,
+                       help='Backtest holding period in trading days (default: 21)')
+    parser.add_argument('--rebalance', type=int, default=21,
+                       help='Backtest rebalance interval in trading days (default: 21)')
+    parser.add_argument('--check-alerts', action='store_true',
+                       help='Send email/SMS/webhook alerts for buy-condition stocks')
+    parser.add_argument('--threshold', type=float, default=75.0,
+                       help='Score threshold for --check-alerts (default: 75)')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='With --check-alerts: print alerts without sending/recording')
+    parser.add_argument('--sectors', action='store_true',
+                       help='Refresh and show sector rotation analysis')
+    parser.add_argument('--news', action='store_true',
+                       help='Show news sentiment for --ticker')
+    parser.add_argument('--options', action='store_true',
+                       help='Show options chain signals for --ticker')
+    parser.add_argument('--optimize-weights', action='store_true',
+                       help='Learn score weights from the latest backtest (ML optimization)')
+    parser.add_argument('--apply', action='store_true',
+                       help='With --optimize-weights: write results into scoring parameters')
+    parser.add_argument('--portfolio', action='store_true',
+                       help='Show portfolio holdings and P&L')
+    parser.add_argument('--portfolio-add', type=str, metavar='TICKER',
+                       help='Record a buy (requires --shares and --price)')
+    parser.add_argument('--portfolio-sell', type=str, metavar='TICKER',
+                       help='Record a sell (requires --price; --shares optional = all)')
+    parser.add_argument('--shares', type=float,
+                       help='Share count for portfolio commands')
+    parser.add_argument('--price', type=float,
+                       help='Price for portfolio commands')
+    parser.add_argument('--position-size', type=str, metavar='TICKER',
+                       help='Risk-based position sizing suggestion for a ticker')
+
     # Parameters
     parser.add_argument('--top', type=int, default=100,
                        help='Number of top stocks to process (default: 100)')
@@ -876,9 +1101,13 @@ def main():
         # Check if hierarchical commands are used
         hierarchical_commands = [args.build_master_list, args.screen, args.deep_analyze]
         legacy_commands = [args.collect_data, args.score, args.export, args.analyze, args.cleanup]
-        
+        feature_commands = [args.backtest, args.check_alerts, args.sectors, args.news,
+                            args.options, args.optimize_weights, args.portfolio,
+                            bool(args.portfolio_add), bool(args.portfolio_sell),
+                            bool(args.position_size)]
+
         # Execute commands in logical order
-        if args.status or (not any(hierarchical_commands + legacy_commands)):
+        if args.status or (not any(hierarchical_commands + legacy_commands + feature_commands)):
             # Show both legacy and hierarchical status
             cli.show_status()
             cli.show_hierarchical_status()
@@ -912,6 +1141,49 @@ def main():
                 parser.print_help()
             else:
                 cli.analyze_stock(args.ticker)
+
+        # 2026 feature commands
+        if args.backtest:
+            cli.run_backtest(args.top, args.period, args.hold, args.rebalance)
+
+        if args.optimize_weights:
+            cli.optimize_weights(args.apply)
+
+        if args.check_alerts:
+            cli.check_alerts(args.threshold, args.dry_run)
+
+        if args.sectors:
+            cli.show_sectors()
+
+        if args.news:
+            if not args.ticker:
+                cli.print_error("--news requires --ticker parameter")
+            else:
+                cli.show_news(args.ticker)
+
+        if args.options:
+            if not args.ticker:
+                cli.print_error("--options requires --ticker parameter")
+            else:
+                cli.show_options(args.ticker)
+
+        if args.portfolio_add:
+            if args.shares is None or args.price is None:
+                cli.print_error("--portfolio-add requires --shares and --price")
+            else:
+                cli.portfolio_add(args.portfolio_add, args.shares, args.price)
+
+        if args.portfolio_sell:
+            if args.price is None:
+                cli.print_error("--portfolio-sell requires --price")
+            else:
+                cli.portfolio_sell(args.portfolio_sell, args.shares, args.price)
+
+        if args.portfolio:
+            cli.show_portfolio()
+
+        if args.position_size:
+            cli.show_position_size(args.position_size)
         
         print(f"\n🎉 CLI operations completed successfully!")
         print(f"📁 Check the output/ directory for organized results")

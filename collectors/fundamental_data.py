@@ -1,7 +1,7 @@
 """
 Fundamental data collector for enhanced dip analysis.
 
-Conservative implementation that builds on existing yahooquery integration
+Conservative implementation that builds on the market_data (yfinance) integration
 and avoids API rate limits by using cached data where possible.
 """
 
@@ -16,7 +16,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Use the same API that works throughout the system
-from yahooquery import Ticker
+from market_data import Ticker
 
 
 class FundamentalDataCollector:
@@ -38,7 +38,7 @@ class FundamentalDataCollector:
     
     def get_fundamental_metrics(self, ticker: str, use_cache: bool = True) -> Dict:
         """
-        Get fundamental metrics for a ticker using yahooquery (same as the working system).
+        Get fundamental metrics for a ticker using market_data (same as the working system).
         
         Args:
             ticker: Stock ticker symbol
@@ -56,7 +56,7 @@ class FundamentalDataCollector:
             if current_time - self.last_api_call < self.rate_limit_delay:
                 time.sleep(self.rate_limit_delay - (current_time - self.last_api_call))
             
-            # Use yahooquery like the rest of the system (this works!)
+            # Use market_data like the rest of the system
             stock = Ticker(ticker)
             
             # Get fundamental data from multiple endpoints
@@ -86,7 +86,7 @@ class FundamentalDataCollector:
             return self._empty_fundamentals()
     
     def _extract_key_metrics(self, info: Dict, ticker: str) -> Dict:
-        """Extract key fundamental metrics from yahooquery data."""
+        """Extract key fundamental metrics from Yahoo quote-summary data."""
         try:
             # Quality Gate metrics (30-40% of methodology)
             fundamentals = {
@@ -136,7 +136,7 @@ class FundamentalDataCollector:
                 'short_ratio': self._safe_get(info, 'shortRatio'),
                 'short_percent_float': self._safe_get(info, 'shortPercentOfFloat'),
                 
-                # Alternative field names that yahooquery might use
+                # Alternative field names that Yahoo might use
                 'enterprise_value': self._safe_get(info, 'enterpriseValue'),
                 'ebitda': self._safe_get(info, 'ebitda'),
                 'total_revenue': self._safe_get(info, 'totalRevenue'),

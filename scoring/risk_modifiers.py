@@ -23,9 +23,6 @@ from datetime import datetime, timedelta
 # Add parent directory to path to import utilities
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Use yahooquery like the rest of the system
-from yahooquery import Ticker
-
 # Add parent directory to path to import Phase 1 collectors
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from collectors.fundamental_data import FundamentalDataCollector
@@ -49,6 +46,7 @@ class RiskModifiers:
             'sector_momentum': 4,
             'volatility_regime': 3,
             'liquidity_risk': 2,
+            'news_sentiment': 2,
             'macro_timing': 1
         }
 
@@ -65,15 +63,17 @@ class RiskModifiers:
             sector_adj = self._assess_sector_momentum(stock_data)
             volatility_adj = self._assess_volatility_regime(stock_data)
             liquidity_adj = self._assess_liquidity_risk(stock_data)
+            sentiment_adj = self._assess_news_sentiment(ticker)
             macro_adj = self._assess_macro_timing()
-            
-            total_adjustment = sector_adj + volatility_adj + liquidity_adj + macro_adj
+
+            total_adjustment = sector_adj + volatility_adj + liquidity_adj + sentiment_adj + macro_adj
             total_adjustment = max(-self.max_adjustment, min(self.max_adjustment, total_adjustment))
-            
+
             risk_details = {
                 'sector_momentum': sector_adj,
                 'volatility_regime': volatility_adj,
                 'liquidity_risk': liquidity_adj,
+                'news_sentiment': sentiment_adj,
                 'macro_timing': macro_adj,
                 'total_risk_adjustment': total_adjustment,
                 'risk_level': self._assess_risk_level(total_adjustment),
@@ -88,8 +88,17 @@ class RiskModifiers:
             return 0, self._empty_risk_details()
 
     def _assess_sector_momentum(self, stock_data: Dict) -> float:
-        """Assess sector momentum. For now, this is a placeholder."""
-        return 0.0
+        """Assess sector momentum using cached sector rotation analysis.
+
+        Reads cache/sector_rotation.json only (refresh it with
+        ``python cli.py --sectors``) so scoring never triggers API calls.
+        """
+        try:
+            from analysis.sector_rotation import sector_adjustment_for
+            sector = stock_data.get('sector', '') or ''
+            return sector_adjustment_for(sector, max_points=self.weights['sector_momentum'])
+        except Exception:
+            return 0.0
 
     def _assess_volatility_regime(self, stock_data: Dict) -> float:
         """Assess volatility regime based on beta."""
@@ -116,6 +125,18 @@ class RiskModifiers:
             elif short_float < 0.05: adjustment += max_adj * 0.4
                 
         return adjustment
+
+    def _assess_news_sentiment(self, ticker: str) -> float:
+        """Adjust for recent news sentiment using *cached* data only.
+
+        Refresh the cache with ``python cli.py --news --ticker X`` (or the
+        API); the scoring loop itself never makes news API calls.
+        """
+        try:
+            from collectors.news_sentiment import sentiment_adjustment_for
+            return sentiment_adjustment_for(ticker, max_points=self.weights['news_sentiment'])
+        except Exception:
+            return 0.0
 
     def _assess_macro_timing(self) -> float:
         """Assess macro event timing risks."""

@@ -5,8 +5,17 @@
 **🎉 Phase 1: COMPLETED** ✅ (January 2025)  
 **🎉 Phase 2: COMPLETED** ✅ (January 2025) - 4-Layer Scoring Engine with API Fixes  
 **🎉 Phase 3: COMPLETED** ✅ (January 2025) - Enhanced Dashboard Components  
-**⏳ Phase 4: READY TO START** (Next: Backtesting Framework)  
-**⏳ Phase 5: PENDING** (Real-time Monitoring)  
+**🎉 Phase 4: COMPLETED** ✅ (July 2026) - Backtesting Framework (`backtesting/`, `python cli.py --backtest`)  
+**🎉 Phase 5: COMPLETED** ✅ (July 2026) - Alerts, ML weight tuning, sector/news/options context  
+
+### 🏆 **Phase 4-5 Key Achievements** (July 2026)
+- ✅ **Walk-forward backtesting engine** with point-in-time scoring (no lookahead), SPY benchmark comparison, win rate / Sharpe / max drawdown reporting
+- ✅ **ML weight optimization** - random search + coordinate ascent over recorded trade components (rank IC + top-quartile return objective)
+- ✅ **Alert system** - email/SMS/webhook with cooldown deduplication (`--check-alerts`)
+- ✅ **Portfolio & position sizing** - ATR-based risk sizing, P&L tracking
+- ✅ **Sector rotation + news sentiment** feeding the Risk Modifiers layer from local caches
+- ✅ **Options chain signals** - put/call ratio, IV skew, max pain
+- ✅ **API modernization** - migrated from the defunct yahooquery to yfinance 1.x via `market_data.py`
 
 ### 🏆 **Phase 1 Key Achievements**
 - ✅ **30+ Technical Indicators** with dip zone detection

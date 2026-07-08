@@ -38,10 +38,20 @@ venv.bak/
 
 # Project specific
 output/
+cache/
 *.csv
 *.json
 !tickers.json  # Keep the initial tickers.json
 !tickers.csv   # Keep the initial tickers.csv
+
+# ...but never ignore package manifests / tool configs (the old blanket
+# *.json rule is why frontend/package.json was missing from the repo)
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
+!frontend/tsconfig.app.json
+!frontend/tsconfig.node.json
+!.claude/settings.json
 
 # Logs
 *.log

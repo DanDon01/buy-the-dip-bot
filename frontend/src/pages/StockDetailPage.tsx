@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import LayeredRadarChart from '../components/LayeredRadarChart';
 import InvestmentRecommendation from '../components/InvestmentRecommendation';
 import LayerBreakdown from '../components/LayerBreakdown';
+import AdvancedChart from '../components/AdvancedChart';
 
 const StockDetailPage = () => {
   const { ticker } = useParams<{ ticker: string }>();
@@ -357,9 +358,9 @@ const StockDetailPage = () => {
                     border: '1px solid #475569', 
                     borderRadius: '8px' 
                   }}
-                  formatter={(value: any, name: string) => [
+                  formatter={(value, name) => [
                     `$${Number(value).toFixed(2)}`,
-                    name
+                    String(name ?? '')
                   ]}
                 />
                 <Legend wrapperStyle={{ color: '#cbd5e1' }}/>
@@ -397,6 +398,9 @@ const StockDetailPage = () => {
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* Advanced Chart with technical overlays (SMA/Bollinger/RSI/MACD) */}
+        {ticker && <AdvancedChart ticker={ticker} />}
 
         {/* Volume Analysis for Dip Detection */}
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">

@@ -48,7 +48,7 @@ from utils import (
     save_cache, load_cache, suppress_output,
     get_cache_key, _stock_info_cache, CACHE_EXPIRY
 )
-from yahooquery import Ticker
+from market_data import Ticker
 
 # Constants
 MASTER_LIST_FILE = "cache/master_list.json"

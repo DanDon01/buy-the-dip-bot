@@ -30,16 +30,18 @@
 ## 🛠️ Tech Stack
 
 ### Backend
-- **Python 3.8+** with Flask web framework
-- **Finnhub API** for comprehensive market data
-- **Yahoo Finance** for supplementary data
-- **Pandas** for data processing and analysis
+- **Python 3.11+** with Flask web framework
+- **yfinance** (1.x) for Yahoo Finance market data — replaced the unmaintained
+  `yahooquery` after Yahoo's cookie/crumb API changes broke it; all access
+  goes through the unified `market_data.py` layer with global rate limiting
+- **Finnhub API** for fundamentals and company news
+- **Pandas / NumPy** for data processing and analysis
 - **Advanced caching** system with JSON persistence
 
 ### Frontend  
-- **React 18** with TypeScript
+- **React 19** with TypeScript 5.8 and Vite 6
 - **Tailwind CSS** for modern styling
-- **Recharts** for interactive data visualization
+- **Recharts 3** for interactive data visualization
 - **Responsive design** for all device sizes
 
 ### Data Management
@@ -228,6 +230,50 @@ python cli.py --analyze --top 25
 python cli.py --fresh --top 50
 ```
 
+### Backtesting & Weight Optimization
+```bash
+# Validate the methodology on 2 years of history, 21-day holds
+python cli.py --backtest --top 10 --period 2y --hold 21
+
+# Learn better score weights from the backtest trades (ML optimization)
+python cli.py --optimize-weights          # review recommendation
+python cli.py --optimize-weights --apply  # write into scoring parameters
+```
+Reports land in `output/backtests/` with win rate, average return, excess
+return vs SPY, Sharpe ratio and max drawdown, plus a per-trade CSV.
+
+### Alerts
+```bash
+# Email/SMS/webhook alerts for stocks hitting buy conditions
+python cli.py --check-alerts --threshold 75
+
+# Preview without sending or recording
+python cli.py --check-alerts --dry-run
+```
+Configure channels via environment variables (see `config/env.example`):
+SMTP for email, Twilio for SMS, or any Discord/Slack-compatible webhook.
+Alerts deduplicate within a 24h cooldown and are logged to `alerts_log.csv`.
+
+### Portfolio & Position Sizing
+```bash
+python cli.py --portfolio                              # holdings + P&L
+python cli.py --portfolio-add AAPL --shares 10 --price 150
+python cli.py --portfolio-sell AAPL --price 170        # close (or --shares N)
+python cli.py --position-size AAPL                     # risk-based sizing
+```
+Position sizing risks a fixed % of capital per trade with an ATR-derived
+stop, scaled by score conviction and capped per position.
+
+### Market Context
+```bash
+python cli.py --sectors                  # sector rotation rankings (11 GICS ETFs)
+python cli.py --news --ticker AAPL       # news sentiment (Finnhub + lexicon)
+python cli.py --options --ticker AAPL    # put/call ratio, IV skew, max pain
+```
+Sector rotation and news sentiment automatically feed the Risk Modifiers
+scoring layer from their local caches — the scoring loop itself never makes
+extra API calls.
+
 ### Web Dashboard
 1. **Home Page**: Overview and quick actions
 2. **Stock Details**: Individual stock analysis with radar charts
@@ -235,6 +281,30 @@ python cli.py --fresh --top 50
 4. **Buy List**: Filtered recommendations by strategy
 
 ## 🔧 Recent Major Improvements
+
+### 🔄 July 2026 Modernization & Feature Release
+- **yahooquery → yfinance migration**: the abandoned `yahooquery` dependency
+  (broken by Yahoo's auth changes) was replaced with actively-maintained
+  `yfinance` 1.x behind a new unified `market_data.py` access layer
+- **Backtesting engine** (`backtesting/`): walk-forward, point-in-time scoring
+  with no lookahead; win rate, Sharpe, drawdown and SPY-relative metrics
+- **ML weight optimization** (`optimization/`): learns dip-score component
+  weights from backtest trades (rank IC + top-quartile return objective)
+- **Alerts** (`alerts.py`): email (SMTP), SMS (Twilio) and Discord/Slack
+  webhook notifications with cooldown-based deduplication
+- **Portfolio & position sizing** (`portfolio.py`): cost-basis tracking,
+  realized/unrealized P&L, ATR-based risk sizing with conviction scaling
+- **Advanced charting**: new `/api/stock/<t>/chart` endpoint + React
+  `AdvancedChart` with SMA 20/50/200, Bollinger Bands, RSI and MACD panels
+- **Sector rotation** (`analysis/sector_rotation.py`): 11 GICS sector ETFs
+  ranked by relative strength vs SPY, feeding the Risk Modifiers layer
+- **News sentiment** (`collectors/news_sentiment.py`): Finnhub headlines
+  scored with a financial lexicon, feeding the Risk Modifiers layer
+- **Options signals** (`collectors/options_data.py`): put/call ratios, ATM IV,
+  IV skew and max pain
+- **Frontend restored & upgraded**: missing `package.json`/tsconfigs
+  recreated; React 19, Vite 6, TypeScript 5.8, Recharts 3, Tailwind 3.4
+- **Test suite** (`tests/`): 28 offline unit tests covering the new modules
 
 ### 📊 Enhanced Data Coverage
 - **234 stocks** now available for testing (vs. 4 previously)
@@ -302,25 +372,23 @@ python cli.py --fresh --top 50
 - **Cache integrity** checks and automatic recovery
 - **Error logging** with detailed troubleshooting info
 
-## 💡 Future Roadmap
+## 💡 Roadmap
 
-### Short Term
-- [ ] Backtesting engine with historical performance
-- [ ] Email/SMS alerts for perfect buy conditions
-- [ ] Portfolio integration and position sizing
-- [ ] Advanced charting with technical overlays
+### Short Term ✅ COMPLETE (July 2026)
+- [x] Backtesting engine with historical performance (`--backtest`)
+- [x] Email/SMS/webhook alerts for perfect buy conditions (`--check-alerts`)
+- [x] Portfolio integration and position sizing (`--portfolio`, `--position-size`)
+- [x] Advanced charting with technical overlays (SMA/Bollinger/RSI/MACD)
 
-### Medium Term  
-- [ ] Machine learning score optimization
-- [ ] News sentiment integration
-- [ ] Sector rotation analysis
-- [ ] Options chain integration
+### Medium Term ✅ COMPLETE (July 2026)
+- [x] Machine learning score optimization (`--optimize-weights`)
+- [x] News sentiment integration (`--news`, feeds risk modifiers)
+- [x] Sector rotation analysis (`--sectors`, feeds risk modifiers)
+- [x] Options chain integration (`--options`)
 
-### Long Term
-- [ ] Multi-asset support (crypto, forex, commodities)
-- [ ] Social trading features
-- [ ] Mobile application
-- [ ] Professional API for institutions
+*The former long-term goals (multi-asset support, social trading, mobile app,
+institutional API) have been dropped to keep the project focused on doing one
+thing well: systematic US-equity dip hunting.*
 
 ## 📈 Performance Stats
 

@@ -6,7 +6,6 @@ import math
 from datetime import datetime
 import pandas as pd
 from utils import load_scores
-from yahooquery import Ticker
 import subprocess
 import sys
 from scoring.composite_scorer import CompositeScorer
@@ -834,6 +833,147 @@ def get_recommendation_from_score(score, type_='new', parameters=None):
         return 'WEAK'
     else:
         return 'AVOID'
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 📈 ADVANCED CHARTING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/stock/<ticker>/chart')
+def get_stock_chart(ticker):
+    """Chart-ready price series with SMA/Bollinger/RSI/MACD overlays."""
+    try:
+        from charting import get_chart_data
+        period = request.args.get('period', '6mo')
+        payload = get_chart_data(ticker, period)
+        if payload is None:
+            return jsonify({'error': f'No chart data available for {ticker}'}), 404
+        return jsonify(clean_data_for_json(payload))
+    except Exception as e:
+        print(f"❌ Error building chart for {ticker}: {e}")
+        return jsonify({'error': f'Chart data unavailable: {e}'}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 💼 PORTFOLIO & POSITION SIZING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/portfolio')
+def get_portfolio():
+    """Current holdings, P&L, and settings."""
+    try:
+        from portfolio import Portfolio
+        return jsonify(clean_data_for_json(Portfolio().summary()))
+    except Exception as e:
+        return jsonify({'error': f'Portfolio unavailable: {e}'}), 500
+
+
+@app.route('/api/portfolio/position', methods=['POST'])
+def add_portfolio_position():
+    """Record a buy: {ticker, shares, price, note?}."""
+    try:
+        from portfolio import Portfolio
+        body = request.json or {}
+        pos = Portfolio().add_position(
+            body['ticker'], float(body['shares']), float(body['price']),
+            note=body.get('note', ''))
+        return jsonify(clean_data_for_json(pos)), 201
+    except (KeyError, ValueError, TypeError) as e:
+        return jsonify({'error': f'Invalid position: {e}'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolio/sell', methods=['POST'])
+def sell_portfolio_position():
+    """Record a sell: {ticker, shares?, price}. Omit shares to close fully."""
+    try:
+        from portfolio import Portfolio
+        body = request.json or {}
+        shares = float(body['shares']) if body.get('shares') is not None else None
+        trade = Portfolio().sell_position(body['ticker'], shares, float(body['price']))
+        return jsonify(clean_data_for_json(trade))
+    except KeyError as e:
+        return jsonify({'error': f'Missing/unknown: {e}'}), 400
+    except (ValueError, TypeError) as e:
+        return jsonify({'error': f'Invalid sale: {e}'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolio/position-size/<ticker>')
+def get_position_size(ticker):
+    """Risk-based position sizing suggestion for a ticker."""
+    try:
+        from portfolio import position_size_for_ticker
+        return jsonify(clean_data_for_json(position_size_for_ticker(ticker)))
+    except KeyError as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🔄 SECTOR ROTATION / NEWS SENTIMENT / OPTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/sectors')
+def get_sectors():
+    """Sector rotation rankings (cached; ?refresh=1 forces an API refresh)."""
+    try:
+        from analysis.sector_rotation import load_sector_rotation
+        refresh = request.args.get('refresh') == '1'
+        data = load_sector_rotation(refresh_if_stale=refresh)
+        if data is None:
+            return jsonify({'error': 'No sector data cached. '
+                                     'Run: python cli.py --sectors'}), 404
+        return jsonify(clean_data_for_json(data))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stock/<ticker>/news')
+def get_stock_news(ticker):
+    """News sentiment summary (Finnhub headlines + lexicon scoring)."""
+    try:
+        from collectors.news_sentiment import NewsSentimentCollector
+        return jsonify(clean_data_for_json(
+            NewsSentimentCollector().get_sentiment(ticker)))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stock/<ticker>/options')
+def get_stock_options(ticker):
+    """Options chain signals: put/call ratio, IV, skew, max pain."""
+    try:
+        from collectors.options_data import OptionsDataCollector
+        return jsonify(clean_data_for_json(
+            OptionsDataCollector().get_options_summary(ticker)))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🧪 BACKTESTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/backtests')
+def list_backtests():
+    """Summaries of saved backtest runs (newest first)."""
+    import glob as _glob
+    reports = []
+    for path in sorted(_glob.glob(os.path.join('output', 'backtests', 'backtest_*.json')),
+                       reverse=True)[:20]:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            reports.append({'file': os.path.basename(path),
+                            'generated': data.get('generated'),
+                            'summary': data.get('summary', {})})
+        except (json.JSONDecodeError, OSError):
+            continue
+    return jsonify(clean_data_for_json(reports))
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)  # Running on a different port (5001) to avoid conflicts with React dev server 
