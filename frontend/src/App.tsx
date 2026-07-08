@@ -5,6 +5,8 @@ import StockSidebar from "./components/StockSidebar";
 import HomePage from "./pages/HomePage";
 import BuyListPage from "./pages/BuyListPage";
 import ScoringTuningPage from "./pages/ScoringTuningPage";
+import PortfolioPage from "./pages/PortfolioPage";
+import MarketPage from "./pages/MarketPage";
 import './App.css';
 
 const AppLayout = () => (
@@ -20,6 +22,8 @@ function App() {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="buylist" element={<BuyListPage />} />
+          <Route path="portfolio" element={<PortfolioPage />} />
+          <Route path="market" element={<MarketPage />} />
           <Route path="scoring-tuning" element={<ScoringTuningPage />} />
           <Route path="stock/:ticker" element={<StockDetailPage />} />
         </Route>

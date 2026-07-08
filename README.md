@@ -9,11 +9,16 @@
 - **Level 2 Screening Lists**: Top 500/250/100 ranked stocks (refreshed daily/weekly)  
 - **Level 3 Deep Analysis**: Full data collection for final picks (real-time)
 
-### 🧠 Advanced 4-Layer Scoring Engine
-- **Quality Gate (35%)**: Fundamental analysis & business quality
-- **Dip Signal (45%)**: Core dip detection & sweet spot analysis
+### 🧠 Advanced 5-Layer Scoring Engine
+- **Quality Gate (30%)**: Fundamental analysis & business quality
+- **Dip Signal (40%)**: Core dip detection & sweet spot analysis
 - **Reversal Spark (15%)**: Momentum shifts & technical indicators
-- **Risk Adjustment (±10%)**: Market context & risk modifiers
+- **Stabilization (15%)**: Falling-knife filter — has the price actually based?
+- **Risk Adjustment (±10%)**: Market context, sector rotation & news sentiment
+
+Layer weights are fully configurable via the dashboard Scoring Tuner (or the
+ML weight optimizer) — the composite scorer rescales every layer to the
+weights in `config/scoring_parameters.json`.
 
 ### 🎮 Interactive Scoring Tuner
 - **Real-time parameter adjustment** with 10 strategic presets
@@ -104,10 +109,11 @@ npm run dev
 │   ├── data_collector.py       # Data collection engine
 │   ├── utils.py               # Utility functions
 │   ├── tracker.py             # Legacy scanner
-│   ├── scoring/               # 4-Layer scoring system
+│   ├── scoring/               # 5-Layer scoring system
 │   │   ├── composite_scorer.py
 │   │   ├── quality_gate.py
 │   │   ├── dip_signal.py
+│   │   ├── stabilization.py
 │   │   ├── reversal_spark.py
 │   │   └── risk_modifiers.py
 │   ├── collectors/            # Data collection modules
@@ -131,6 +137,8 @@ npm run dev
 │   │   └── pages/             # Application pages
 │   │       ├── HomePage.tsx
 │   │       ├── StockDetailPage.tsx
+│   │       ├── PortfolioPage.tsx
+│   │       ├── MarketPage.tsx
 │   │       ├── ScoringTuningPage.tsx
 │   │       └── BuyListPage.tsx
 │   ├── package.json
@@ -169,7 +177,7 @@ python cli.py --screen --top 250
 python cli.py --analyze --top 50
 ```
 - Full data collection for final candidates
-- Complete 4-layer scoring analysis
+- Complete 5-layer scoring analysis
 - Real-time monitoring and alerts
 - Investment-ready recommendations
 
@@ -187,14 +195,14 @@ python cli.py --analyze --top 50
 
 ## 🧠 Scoring Methodology
 
-### Quality Gate (35% Weight)
+### Quality Gate (30% Weight)
 - **Cash Flow Health**: Positive FCF and liquidity
 - **Profitability**: ROE, margins, earnings quality
 - **Debt Management**: Debt/EBITDA ratios
 - **Valuation Sanity**: P/E ratio reasonableness
 - **Business Quality**: Competitive moats
 
-### Dip Signal (45% Weight)
+### Dip Signal (40% Weight)
 - **Drop Severity**: % decline from 52-week high
 - **Sweet Spot Detection**: Optimal discount range (15-40%)
 - **Oversold RSI**: Technical oversold conditions
@@ -206,6 +214,15 @@ python cli.py --analyze --top 50
 - **Candlestick Patterns**: Reversal formations
 - **Volume Reversal**: Buying interest confirmation
 - **Momentum Divergence**: Price vs indicator divergence
+
+### Stabilization (15% Weight) — *new July 2026*
+- **Base Formation**: Higher lows over the recent window
+- **Recovery Traction**: A modest bounce off the low that holds (3-15% sweet spot)
+- **Volatility Contraction**: Short-term ATR cooling vs its average (panic subsiding)
+- **Momentum Decay**: Down days becoming rarer and shallower
+
+A high Dip Signal with a *low* Stabilization score is a falling knife — the
+recommendation engine will never issue STRONG_BUY in that state.
 
 ### Risk Adjustment (±10%)
 - **Sector Momentum**: Industry trends
@@ -314,7 +331,7 @@ extra API calls.
 - **Fixed testing issues** where same 4 stocks appeared repeatedly
 
 ### 🎯 Scoring System Overhaul
-- **4-layer methodology** replaces simple scoring
+- **5-layer methodology** replaces simple scoring
 - **Configurable parameters** with preset strategies
 - **Real-time testing** against actual market data
 - **Enhanced vs basic data** handling for full coverage
@@ -396,7 +413,7 @@ thing well: systematic US-equity dip hunting.*
 - **234 stocks** with full fundamental data
 - **95% API call reduction** through smart caching
 - **<0.5s** average response time for web interface
-- **4-layer scoring** with 15+ technical indicators
+- **5-layer scoring** with 15+ technical indicators
 - **10 strategic presets** for different market conditions
 
 ## 🧙 Author

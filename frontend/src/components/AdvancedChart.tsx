@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useEffect, useState } from 'react';
 import {
   ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid,
@@ -67,7 +68,7 @@ function AdvancedChart({ ticker }: { ticker: string }) {
       setError(null);
       try {
         const res = await fetch(
-          `http://localhost:5001/api/stock/${ticker}/chart?period=${period}`);
+          `${API_BASE}/api/stock/${ticker}/chart?period=${period}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const payload = await res.json();
         if (!cancelled) setData(payload);

@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useState } from 'react';
 
 const ActionCenter = () => {
@@ -11,7 +12,7 @@ const ActionCenter = () => {
     setError(null);
 
     try {
-      const res = await fetch(`http://localhost:5001/api/tasks/${endpoint}`, {
+      const res = await fetch(`${API_BASE}/api/tasks/${endpoint}`, {
         method: 'POST',
       });
       const data = await res.json();

@@ -567,7 +567,7 @@ class DataCollector:
                 layered_details = {
                     'error': str(layered_error),
                     'fallback': 'legacy_scoring_used',
-                    'layer_scores': {'quality_gate': 0, 'dip_signal': 0, 'reversal_spark': 0, 'risk_adjustment': 0},
+                    'layer_scores': {'quality_gate': 0, 'dip_signal': 0, 'reversal_spark': 0, 'stabilization': 0, 'risk_adjustment': 0},
                     'overall_grade': 'F',
                     'investment_recommendation': {'action': 'AVOID', 'confidence': 'high', 'reason': 'Enhanced scoring error'}
                 }

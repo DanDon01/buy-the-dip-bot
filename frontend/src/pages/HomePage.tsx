@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useEffect, useState } from 'react';
 import PerformanceMetrics from '../components/PerformanceMetrics';
 
@@ -17,7 +18,7 @@ const HomePage = () => {
     const fetchData = async () => {
       try {
         // Fetch stats
-        const statsRes = await fetch('http://localhost:5001/api/stats');
+        const statsRes = await fetch(`${API_BASE}/api/stats`);
         if (statsRes.ok) {
           const statsData = await statsRes.json();
           setStats(statsData);

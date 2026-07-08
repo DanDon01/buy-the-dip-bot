@@ -549,10 +549,12 @@ class BuyTheDipCLI:
                 if 'layered_details' in details and isinstance(details['layered_details'], dict):
                     layer_scores = details['layered_details'].get('layer_scores', {})
                     if layer_scores:
+                        weights = details['layered_details'].get('layer_weights', {})
                         print(f"   Layer Breakdown:")
-                        print(f"      • Quality Gate: {layer_scores.get('quality_gate', 0):.1f}/35")
-                        print(f"      • Dip Signal: {layer_scores.get('dip_signal', 0):.1f}/45")
-                        print(f"      • Reversal Spark: {layer_scores.get('reversal_spark', 0):.1f}/15")
+                        print(f"      • Quality Gate: {layer_scores.get('quality_gate', 0):.1f}/{weights.get('quality_gate', 30)}")
+                        print(f"      • Dip Signal: {layer_scores.get('dip_signal', 0):.1f}/{weights.get('dip_signal', 40)}")
+                        print(f"      • Reversal Spark: {layer_scores.get('reversal_spark', 0):.1f}/{weights.get('reversal_spark', 15)}")
+                        print(f"      • Stabilization: {layer_scores.get('stabilization', 0):.1f}/{weights.get('stabilization', 15)}")
                         print(f"      • Risk Adjustment: {layer_scores.get('risk_adjustment', 0):+.1f}")
                 
                 # Investment recommendation
