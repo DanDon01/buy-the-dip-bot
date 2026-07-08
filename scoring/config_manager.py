@@ -48,10 +48,11 @@ class ScoringConfigManager:
     def _get_default_parameters(self) -> Dict:
         """Get default scoring parameters."""
         return {
-            # Layer Weights
-            'quality_gate_weight': 35,
-            'dip_signal_weight': 45,
+            # Layer Weights (base layers sum to 100; risk is ± on top)
+            'quality_gate_weight': 30,
+            'dip_signal_weight': 40,
             'reversal_spark_weight': 15,
+            'stabilization_weight': 15,
             'risk_adjustment_weight': 10,
             
             # Quality Gate Thresholds

@@ -38,6 +38,27 @@ python cli.py --export --top 20
 python cli.py --export --top 50
 ```
 
+### 4b. Backtesting, Alerts, Portfolio & Market Context (July 2026)
+```bash
+# Backtesting & ML weight optimization
+python cli.py --backtest --top 10 --period 2y --hold 21
+python cli.py --optimize-weights [--apply]
+
+# Buy-condition alerts (email/SMS/webhook - see config/env.example)
+python cli.py --check-alerts --threshold 75 [--dry-run]
+
+# Portfolio tracking & risk-based position sizing
+python cli.py --portfolio
+python cli.py --portfolio-add AAPL --shares 10 --price 150
+python cli.py --portfolio-sell AAPL --price 170
+python cli.py --position-size AAPL
+
+# Market context (feeds the Risk Modifiers scoring layer)
+python cli.py --sectors
+python cli.py --news --ticker AAPL
+python cli.py --options --ticker AAPL
+```
+
 ### 5. Analyze Specific Stocks
 ```bash
 python cli.py --analyze --ticker AAPL

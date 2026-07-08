@@ -7,7 +7,7 @@ from data_collector import DataCollector
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from utils import ensure_cache_dir
-from yahooquery import Ticker
+from market_data import Ticker
 
 class StockTracker:
     def __init__(self):

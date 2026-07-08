@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from yahooquery import Ticker
+from market_data import Ticker
 from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
@@ -253,7 +253,7 @@ def calculate_rsi(prices, period=14):
     return 100 - (100 / (1 + rs))
 
 def get_stock_data(ticker, period="1wk"):
-    """Fetch stock data using yfinance with caching."""
+    """Fetch stock data via market_data (yfinance) with caching."""
     cache_key = get_cache_key(f"{ticker}_{period}", 'data')
     current_time = datetime.now()
     
@@ -270,7 +270,7 @@ def get_stock_data(ticker, period="1wk"):
         hist = stock.history(period=period, interval='1d')
         if hist is None or hist.empty:
             return None
-        # yahooquery returns a MultiIndex (symbol, date). Drop the symbol level for single ticker
+        # Multi-symbol frames use a (symbol, date) MultiIndex. Drop the symbol level for single ticker
         if isinstance(hist.index, pd.MultiIndex):
             hist = hist.xs(ticker, level=0, drop_level=True)
         # Standardise column capitalisation so downstream code stays unchanged (Close / Volume)
@@ -516,7 +516,7 @@ def get_stock_info(ticker):
     try:
         with suppress_output():
             stock = Ticker(ticker)
-            # yahooquery exposes multiple info dicts, merge the essentials
+            # market_data exposes multiple info dicts, merge the essentials
             summary = stock.summary_detail.get(ticker, {})
             price   = stock.price.get(ticker, {})
             info    = {**summary, **price}

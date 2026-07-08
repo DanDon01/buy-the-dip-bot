@@ -1,5 +1,5 @@
 import pandas as pd
-from yahooquery import Ticker
+from market_data import Ticker
 import json
 import os
 from utils import (
@@ -103,9 +103,9 @@ class DataCollector:
                 if attempt > 0:
                     time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
                 
-                # Get basic info with yahooquery
+                # Get basic info via market_data (yfinance-backed)
                 stock = Ticker(cleaned_ticker)
-                # yahooquery sometimes returns a string like "No summary detail found"
+                # Yahoo sometimes returns a string like "No summary detail found"
                 raw_summary = stock.summary_detail.get(cleaned_ticker, {})
                 raw_price   = stock.price.get(cleaned_ticker, {})
                 # ENHANCED: Fetch additional data sources for comprehensive metrics
@@ -567,7 +567,7 @@ class DataCollector:
                 layered_details = {
                     'error': str(layered_error),
                     'fallback': 'legacy_scoring_used',
-                    'layer_scores': {'quality_gate': 0, 'dip_signal': 0, 'reversal_spark': 0, 'risk_adjustment': 0},
+                    'layer_scores': {'quality_gate': 0, 'dip_signal': 0, 'reversal_spark': 0, 'stabilization': 0, 'risk_adjustment': 0},
                     'overall_grade': 'F',
                     'investment_recommendation': {'action': 'AVOID', 'confidence': 'high', 'reason': 'Enhanced scoring error'}
                 }
@@ -787,7 +787,7 @@ class DataCollector:
         year_high = price_info.get("fiftyTwoWeekHigh")
         year_low = price_info.get("fiftyTwoWeekLow")
 
-        # Keep year_high and year_low as None if not available from yahooquery
+        # Keep year_high and year_low as None if not available from Yahoo
         # No more yfinance fallback to maintain API consistency
 
         # Fundamental extras

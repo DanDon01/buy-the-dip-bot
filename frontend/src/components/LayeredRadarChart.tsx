@@ -6,6 +6,14 @@ interface LayeredScoreData {
     quality_gate?: number;
     dip_signal?: number;
     reversal_spark?: number;
+    stabilization?: number;
+    risk_adjustment?: number;
+  };
+  layer_weights?: {
+    quality_gate?: number;
+    dip_signal?: number;
+    reversal_spark?: number;
+    stabilization?: number;
     risk_adjustment?: number;
   };
   calculation_details?: {
@@ -79,12 +87,21 @@ const LayeredRadarChart: React.FC<LayeredRadarChartProps> = ({ data, ticker }) =
     },
     {
       factor: 'Momentum',
-      score: data.layer_scores?.reversal_spark ? 
-        (data.layer_scores.reversal_spark / 15) * 100 : 45, // Use actual reversal spark score with fallback
-      rawValue: data.layer_scores?.reversal_spark ? 
-        `${data.layer_scores.reversal_spark.toFixed(1)}/15` : 'Building',
+      score: data.layer_scores?.reversal_spark ?
+        (data.layer_scores.reversal_spark / (data.layer_weights?.reversal_spark || 15)) * 100 : 45,
+      rawValue: data.layer_scores?.reversal_spark ?
+        `${data.layer_scores.reversal_spark.toFixed(1)}/${data.layer_weights?.reversal_spark || 15}` : 'Building',
       color: '#8b5cf6',
       description: 'Technical momentum signals for reversal potential'
+    },
+    {
+      factor: 'Stabilization',
+      score: data.layer_scores?.stabilization != null ?
+        (data.layer_scores.stabilization / (data.layer_weights?.stabilization || 15)) * 100 : 40,
+      rawValue: data.layer_scores?.stabilization != null ?
+        `${data.layer_scores.stabilization.toFixed(1)}/${data.layer_weights?.stabilization || 15}` : 'Unknown',
+      color: '#14b8a6',
+      description: 'Falling-knife filter: has the price stopped falling and formed a base?'
     },
     {
       factor: 'Market Cap Safety',
@@ -112,8 +129,8 @@ const LayeredRadarChart: React.FC<LayeredRadarChartProps> = ({ data, ticker }) =
     },
     {
       factor: 'Technical Setup',
-      score: Math.max((data.layer_scores?.dip_signal || 0) / 45 * 100, 25), // Minimum 25% for any setup
-      rawValue: `${(data.layer_scores?.dip_signal || 11).toFixed(1)}/45`,
+      score: Math.max((data.layer_scores?.dip_signal || 0) / (data.layer_weights?.dip_signal || 40) * 100, 25),
+      rawValue: `${(data.layer_scores?.dip_signal || 0).toFixed(1)}/${data.layer_weights?.dip_signal || 40}`,
       color: '#ec4899',
       description: 'Overall technical dip signal strength'
     }

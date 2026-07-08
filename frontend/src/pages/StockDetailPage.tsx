@@ -1,9 +1,11 @@
+import { API_BASE } from '../lib/api';
 import { useEffect, useState } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import LayeredRadarChart from '../components/LayeredRadarChart';
 import InvestmentRecommendation from '../components/InvestmentRecommendation';
 import LayerBreakdown from '../components/LayerBreakdown';
+import AdvancedChart from '../components/AdvancedChart';
 
 const StockDetailPage = () => {
   const { ticker } = useParams<{ ticker: string }>();
@@ -32,7 +34,7 @@ const StockDetailPage = () => {
         setDetailsError(null);
 
         try {
-          const stockRes = await fetch(`http://localhost:5001/api/stock/${ticker}`);
+          const stockRes = await fetch(`${API_BASE}/api/stock/${ticker}`);
           if (!stockRes.ok) {
             const errData = await stockRes.json();
             throw new Error(errData.error || 'Stock not found');
@@ -72,7 +74,7 @@ const StockDetailPage = () => {
           }
 
           try {
-            const detailsRes = await fetch(`http://localhost:5001/api/stock_details/${ticker}`);
+            const detailsRes = await fetch(`${API_BASE}/api/stock_details/${ticker}`);
             if (detailsRes.ok) {
               const detailsData = await detailsRes.json();
               setExtraDetails(detailsData);
@@ -357,9 +359,9 @@ const StockDetailPage = () => {
                     border: '1px solid #475569', 
                     borderRadius: '8px' 
                   }}
-                  formatter={(value: any, name: string) => [
+                  formatter={(value, name) => [
                     `$${Number(value).toFixed(2)}`,
-                    name
+                    String(name ?? '')
                   ]}
                 />
                 <Legend wrapperStyle={{ color: '#cbd5e1' }}/>
@@ -397,6 +399,9 @@ const StockDetailPage = () => {
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* Advanced Chart with technical overlays (SMA/Bollinger/RSI/MACD) */}
+        {ticker && <AdvancedChart ticker={ticker} />}
 
         {/* Volume Analysis for Dip Detection */}
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">
@@ -566,12 +571,12 @@ const StockDetailPage = () => {
                 <p className="text-2xl font-bold mb-2 text-blue-400">
                   {((scoringData?.layer_scores?.quality_gate || stock.layer_scores?.quality_gate || 0)).toFixed(1)}
                 </p>
-                <div className="text-xs text-slate-400">/ 35 points</div>
+                <div className="text-xs text-slate-400">/ {stock.layer_weights?.quality_gate ?? 30} points</div>
                 <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
-                  <div 
+                  <div
                     className="h-1 rounded-full transition-all duration-300 bg-blue-500"
-                    style={{ 
-                      width: `${Math.min(((scoringData?.layer_scores?.quality_gate || stock.layer_scores?.quality_gate || 0) / 35) * 100, 100)}%`
+                    style={{
+                      width: `${Math.min(((scoringData?.layer_scores?.quality_gate || stock.layer_scores?.quality_gate || 0) / (stock.layer_weights?.quality_gate ?? 30)) * 100, 100)}%`
                     }}
                   ></div>
                 </div>
@@ -583,12 +588,12 @@ const StockDetailPage = () => {
                 <p className="text-2xl font-bold mb-2 text-red-400">
                   {((scoringData?.layer_scores?.dip_signal || stock.layer_scores?.dip_signal || 0)).toFixed(1)}
                 </p>
-                <div className="text-xs text-slate-400">/ 45 points</div>
+                <div className="text-xs text-slate-400">/ {stock.layer_weights?.dip_signal ?? 40} points</div>
                 <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
-                  <div 
+                  <div
                     className="h-1 rounded-full transition-all duration-300 bg-red-500"
-                    style={{ 
-                      width: `${Math.min(((scoringData?.layer_scores?.dip_signal || stock.layer_scores?.dip_signal || 0) / 45) * 100, 100)}%`
+                    style={{
+                      width: `${Math.min(((scoringData?.layer_scores?.dip_signal || stock.layer_scores?.dip_signal || 0) / (stock.layer_weights?.dip_signal ?? 40)) * 100, 100)}%`
                     }}
                   ></div>
                 </div>
@@ -609,6 +614,32 @@ const StockDetailPage = () => {
                     }}
                   ></div>
                 </div>
+              </div>
+
+              {/* Stabilization (falling-knife filter) */}
+              <div className="bg-slate-700 border-2 border-teal-600/30 p-4 rounded-lg text-center hover:bg-slate-600 transition-all duration-300">
+                <h3 className="text-teal-400 text-sm font-medium uppercase tracking-wider mb-2">Stabilization</h3>
+                <p className="text-2xl font-bold mb-2 text-teal-400">
+                  {((scoringData?.layer_scores?.stabilization || stock.layer_scores?.stabilization || 0)).toFixed(1)}
+                </p>
+                <div className="text-xs text-slate-400">/ {stock.layer_weights?.stabilization ?? 15} points</div>
+                <div className="w-full bg-slate-600 rounded-full h-1 mt-2">
+                  <div
+                    className="h-1 rounded-full transition-all duration-300 bg-teal-500"
+                    style={{
+                      width: `${Math.min(((scoringData?.layer_scores?.stabilization || stock.layer_scores?.stabilization || 0) / (stock.layer_weights?.stabilization ?? 15)) * 100, 100)}%`
+                    }}
+                  ></div>
+                </div>
+                {stock.stabilization_details?.falling_knife_risk && (
+                  <div className={`text-xs mt-2 ${
+                    stock.stabilization_details.falling_knife_risk === 'low' ? 'text-green-400'
+                      : stock.stabilization_details.falling_knife_risk === 'moderate' ? 'text-yellow-400'
+                      : 'text-red-400'
+                  }`}>
+                    knife risk: {stock.stabilization_details.falling_knife_risk}
+                  </div>
+                )}
               </div>
 
               {/* Risk Adjustment */}

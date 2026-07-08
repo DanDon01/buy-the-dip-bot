@@ -31,7 +31,20 @@ interface LayerData {
     quality_gate?: number;
     dip_signal?: number;
     reversal_spark?: number;
+    stabilization?: number;
     risk_adjustment?: number;
+  };
+  layer_weights?: {
+    quality_gate?: number;
+    dip_signal?: number;
+    reversal_spark?: number;
+    stabilization?: number;
+    risk_adjustment?: number;
+  };
+  stabilization_details?: {
+    stabilization_state?: string;
+    falling_knife_risk?: string;
+    signals?: Record<string, unknown>;
   };
   calculation_details?: CalculationDetails;
   overall_grade?: string;
@@ -45,6 +58,12 @@ interface LayerBreakdownProps {
 
 const LayerBreakdown: React.FC<LayerBreakdownProps> = ({ data, ticker }) => {
   const [expandedLayer, setExpandedLayer] = useState<string | null>(null);
+
+  // Configured layer weights (fall back to the July 2026 defaults)
+  const wQuality = data.layer_weights?.quality_gate ?? 30;
+  const wDip = data.layer_weights?.dip_signal ?? 40;
+  const wReversal = data.layer_weights?.reversal_spark ?? 15;
+  const wStabilization = data.layer_weights?.stabilization ?? 15;
 
   const toggleLayer = (layerName: string) => {
     setExpandedLayer(expandedLayer === layerName ? null : layerName);
@@ -107,13 +126,13 @@ const LayerBreakdown: React.FC<LayerBreakdownProps> = ({ data, ticker }) => {
         >
           <div className="flex items-center space-x-3">
             <div className="w-4 h-4 bg-blue-500 rounded"></div>
-            <span className="font-semibold text-white">Quality Gate (35% Weight)</span>
-            <span className={`text-sm ${getGradeColor(getScoreGrade(data.layer_scores?.quality_gate || 0, 35))}`}>
-              Grade {getScoreGrade(data.layer_scores?.quality_gate || 0, 35)}
+            <span className="font-semibold text-white">Quality Gate ({wQuality}% Weight)</span>
+            <span className={`text-sm ${getGradeColor(getScoreGrade(data.layer_scores?.quality_gate || 0, wQuality))}`}>
+              Grade {getScoreGrade(data.layer_scores?.quality_gate || 0, wQuality)}
             </span>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-blue-400">{formatValue(data.layer_scores?.quality_gate)}/35</span>
+            <span className="text-blue-400">{formatValue(data.layer_scores?.quality_gate)}/{wQuality}</span>
             <span className="text-slate-400">
               {expandedLayer === 'quality' ? '▼' : '▶'}
             </span>
@@ -197,13 +216,13 @@ const LayerBreakdown: React.FC<LayerBreakdownProps> = ({ data, ticker }) => {
         >
           <div className="flex items-center space-x-3">
             <div className="w-4 h-4 bg-red-500 rounded"></div>
-            <span className="font-semibold text-white">Dip Signal (45% Weight)</span>
-            <span className={`text-sm ${getGradeColor(getScoreGrade(data.layer_scores?.dip_signal || 0, 45))}`}>
-              Grade {getScoreGrade(data.layer_scores?.dip_signal || 0, 45)}
+            <span className="font-semibold text-white">Dip Signal ({wDip}% Weight)</span>
+            <span className={`text-sm ${getGradeColor(getScoreGrade(data.layer_scores?.dip_signal || 0, wDip))}`}>
+              Grade {getScoreGrade(data.layer_scores?.dip_signal || 0, wDip)}
             </span>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-red-400">{formatValue(data.layer_scores?.dip_signal)}/45</span>
+            <span className="text-red-400">{formatValue(data.layer_scores?.dip_signal)}/{wDip}</span>
             <span className="text-slate-400">
               {expandedLayer === 'dip' ? '▼' : '▶'}
             </span>
@@ -275,13 +294,13 @@ const LayerBreakdown: React.FC<LayerBreakdownProps> = ({ data, ticker }) => {
         >
           <div className="flex items-center space-x-3">
             <div className="w-4 h-4 bg-green-500 rounded"></div>
-            <span className="font-semibold text-white">Reversal Spark (15% Weight)</span>
-            <span className={`text-sm ${getGradeColor(getScoreGrade(data.layer_scores?.reversal_spark || 0, 15))}`}>
-              Grade {getScoreGrade(data.layer_scores?.reversal_spark || 0, 15)}
+            <span className="font-semibold text-white">Reversal Spark ({wReversal}% Weight)</span>
+            <span className={`text-sm ${getGradeColor(getScoreGrade(data.layer_scores?.reversal_spark || 0, wReversal))}`}>
+              Grade {getScoreGrade(data.layer_scores?.reversal_spark || 0, wReversal)}
             </span>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-green-400">{formatValue(data.layer_scores?.reversal_spark)}/15</span>
+            <span className="text-green-400">{formatValue(data.layer_scores?.reversal_spark)}/{wReversal}</span>
             <span className="text-slate-400">
               {expandedLayer === 'reversal' ? '▼' : '▶'}
             </span>
@@ -331,6 +350,63 @@ const LayerBreakdown: React.FC<LayerBreakdownProps> = ({ data, ticker }) => {
                   </span>
                 </div>
               </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Stabilization Layer (falling-knife filter) */}
+      <div className="bg-slate-800 rounded-lg border border-slate-700">
+        <button
+          onClick={() => toggleLayer('stabilization')}
+          className="w-full p-4 flex items-center justify-between hover:bg-slate-700 transition-colors"
+        >
+          <div className="flex items-center space-x-3">
+            <div className="w-4 h-4 bg-teal-500 rounded"></div>
+            <span className="font-semibold text-white">Stabilization ({wStabilization}% Weight)</span>
+            <span className={`text-sm ${getGradeColor(getScoreGrade(data.layer_scores?.stabilization || 0, wStabilization))}`}>
+              Grade {getScoreGrade(data.layer_scores?.stabilization || 0, wStabilization)}
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-teal-400">{formatValue(data.layer_scores?.stabilization)}/{wStabilization}</span>
+            <span className="text-slate-400">
+              {expandedLayer === 'stabilization' ? '▼' : '▶'}
+            </span>
+          </div>
+        </button>
+
+        {expandedLayer === 'stabilization' && (
+          <div className="p-4 border-t border-slate-700 space-y-3">
+            <div className="text-sm text-slate-300 mb-3">
+              Falling-knife filter: has the price stopped falling? Measures base
+              formation (higher lows), recovery off the low, volatility contraction
+              and down-day deceleration.
+            </div>
+            {data.stabilization_details?.stabilization_state && (
+              <div className="flex justify-between items-center bg-slate-700/50 p-2 rounded">
+                <span className="text-slate-300">State</span>
+                <span className="text-white font-medium">
+                  {data.stabilization_details.stabilization_state.replace(/_/g, ' ')}
+                </span>
+              </div>
+            )}
+            {data.stabilization_details?.falling_knife_risk && (
+              <div className="flex justify-between items-center bg-slate-700/50 p-2 rounded">
+                <span className="text-slate-300">Falling-knife risk</span>
+                <span className={
+                  data.stabilization_details.falling_knife_risk === 'low' ? 'text-green-400'
+                    : data.stabilization_details.falling_knife_risk === 'moderate' ? 'text-yellow-400'
+                    : 'text-red-400'
+                }>
+                  {data.stabilization_details.falling_knife_risk}
+                </span>
+              </div>
+            )}
+            {!data.stabilization_details && (
+              <p className="text-slate-500 text-sm">
+                Detailed signals appear after the next scoring run.
+              </p>
             )}
           </div>
         )}

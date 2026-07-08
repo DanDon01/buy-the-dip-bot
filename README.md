@@ -9,11 +9,16 @@
 - **Level 2 Screening Lists**: Top 500/250/100 ranked stocks (refreshed daily/weekly)  
 - **Level 3 Deep Analysis**: Full data collection for final picks (real-time)
 
-### 🧠 Advanced 4-Layer Scoring Engine
-- **Quality Gate (35%)**: Fundamental analysis & business quality
-- **Dip Signal (45%)**: Core dip detection & sweet spot analysis
+### 🧠 Advanced 5-Layer Scoring Engine
+- **Quality Gate (30%)**: Fundamental analysis & business quality
+- **Dip Signal (40%)**: Core dip detection & sweet spot analysis
 - **Reversal Spark (15%)**: Momentum shifts & technical indicators
-- **Risk Adjustment (±10%)**: Market context & risk modifiers
+- **Stabilization (15%)**: Falling-knife filter — has the price actually based?
+- **Risk Adjustment (±10%)**: Market context, sector rotation & news sentiment
+
+Layer weights are fully configurable via the dashboard Scoring Tuner (or the
+ML weight optimizer) — the composite scorer rescales every layer to the
+weights in `config/scoring_parameters.json`.
 
 ### 🎮 Interactive Scoring Tuner
 - **Real-time parameter adjustment** with 10 strategic presets
@@ -30,16 +35,18 @@
 ## 🛠️ Tech Stack
 
 ### Backend
-- **Python 3.8+** with Flask web framework
-- **Finnhub API** for comprehensive market data
-- **Yahoo Finance** for supplementary data
-- **Pandas** for data processing and analysis
+- **Python 3.11+** with Flask web framework
+- **yfinance** (1.x) for Yahoo Finance market data — replaced the unmaintained
+  `yahooquery` after Yahoo's cookie/crumb API changes broke it; all access
+  goes through the unified `market_data.py` layer with global rate limiting
+- **Finnhub API** for fundamentals and company news
+- **Pandas / NumPy** for data processing and analysis
 - **Advanced caching** system with JSON persistence
 
 ### Frontend  
-- **React 18** with TypeScript
+- **React 19** with TypeScript 5.8 and Vite 6
 - **Tailwind CSS** for modern styling
-- **Recharts** for interactive data visualization
+- **Recharts 3** for interactive data visualization
 - **Responsive design** for all device sizes
 
 ### Data Management
@@ -102,10 +109,11 @@ npm run dev
 │   ├── data_collector.py       # Data collection engine
 │   ├── utils.py               # Utility functions
 │   ├── tracker.py             # Legacy scanner
-│   ├── scoring/               # 4-Layer scoring system
+│   ├── scoring/               # 5-Layer scoring system
 │   │   ├── composite_scorer.py
 │   │   ├── quality_gate.py
 │   │   ├── dip_signal.py
+│   │   ├── stabilization.py
 │   │   ├── reversal_spark.py
 │   │   └── risk_modifiers.py
 │   ├── collectors/            # Data collection modules
@@ -129,6 +137,8 @@ npm run dev
 │   │   └── pages/             # Application pages
 │   │       ├── HomePage.tsx
 │   │       ├── StockDetailPage.tsx
+│   │       ├── PortfolioPage.tsx
+│   │       ├── MarketPage.tsx
 │   │       ├── ScoringTuningPage.tsx
 │   │       └── BuyListPage.tsx
 │   ├── package.json
@@ -167,7 +177,7 @@ python cli.py --screen --top 250
 python cli.py --analyze --top 50
 ```
 - Full data collection for final candidates
-- Complete 4-layer scoring analysis
+- Complete 5-layer scoring analysis
 - Real-time monitoring and alerts
 - Investment-ready recommendations
 
@@ -185,14 +195,14 @@ python cli.py --analyze --top 50
 
 ## 🧠 Scoring Methodology
 
-### Quality Gate (35% Weight)
+### Quality Gate (30% Weight)
 - **Cash Flow Health**: Positive FCF and liquidity
 - **Profitability**: ROE, margins, earnings quality
 - **Debt Management**: Debt/EBITDA ratios
 - **Valuation Sanity**: P/E ratio reasonableness
 - **Business Quality**: Competitive moats
 
-### Dip Signal (45% Weight)
+### Dip Signal (40% Weight)
 - **Drop Severity**: % decline from 52-week high
 - **Sweet Spot Detection**: Optimal discount range (15-40%)
 - **Oversold RSI**: Technical oversold conditions
@@ -204,6 +214,15 @@ python cli.py --analyze --top 50
 - **Candlestick Patterns**: Reversal formations
 - **Volume Reversal**: Buying interest confirmation
 - **Momentum Divergence**: Price vs indicator divergence
+
+### Stabilization (15% Weight) — *new July 2026*
+- **Base Formation**: Higher lows over the recent window
+- **Recovery Traction**: A modest bounce off the low that holds (3-15% sweet spot)
+- **Volatility Contraction**: Short-term ATR cooling vs its average (panic subsiding)
+- **Momentum Decay**: Down days becoming rarer and shallower
+
+A high Dip Signal with a *low* Stabilization score is a falling knife — the
+recommendation engine will never issue STRONG_BUY in that state.
 
 ### Risk Adjustment (±10%)
 - **Sector Momentum**: Industry trends
@@ -228,6 +247,50 @@ python cli.py --analyze --top 25
 python cli.py --fresh --top 50
 ```
 
+### Backtesting & Weight Optimization
+```bash
+# Validate the methodology on 2 years of history, 21-day holds
+python cli.py --backtest --top 10 --period 2y --hold 21
+
+# Learn better score weights from the backtest trades (ML optimization)
+python cli.py --optimize-weights          # review recommendation
+python cli.py --optimize-weights --apply  # write into scoring parameters
+```
+Reports land in `output/backtests/` with win rate, average return, excess
+return vs SPY, Sharpe ratio and max drawdown, plus a per-trade CSV.
+
+### Alerts
+```bash
+# Email/SMS/webhook alerts for stocks hitting buy conditions
+python cli.py --check-alerts --threshold 75
+
+# Preview without sending or recording
+python cli.py --check-alerts --dry-run
+```
+Configure channels via environment variables (see `config/env.example`):
+SMTP for email, Twilio for SMS, or any Discord/Slack-compatible webhook.
+Alerts deduplicate within a 24h cooldown and are logged to `alerts_log.csv`.
+
+### Portfolio & Position Sizing
+```bash
+python cli.py --portfolio                              # holdings + P&L
+python cli.py --portfolio-add AAPL --shares 10 --price 150
+python cli.py --portfolio-sell AAPL --price 170        # close (or --shares N)
+python cli.py --position-size AAPL                     # risk-based sizing
+```
+Position sizing risks a fixed % of capital per trade with an ATR-derived
+stop, scaled by score conviction and capped per position.
+
+### Market Context
+```bash
+python cli.py --sectors                  # sector rotation rankings (11 GICS ETFs)
+python cli.py --news --ticker AAPL       # news sentiment (Finnhub + lexicon)
+python cli.py --options --ticker AAPL    # put/call ratio, IV skew, max pain
+```
+Sector rotation and news sentiment automatically feed the Risk Modifiers
+scoring layer from their local caches — the scoring loop itself never makes
+extra API calls.
+
 ### Web Dashboard
 1. **Home Page**: Overview and quick actions
 2. **Stock Details**: Individual stock analysis with radar charts
@@ -235,6 +298,30 @@ python cli.py --fresh --top 50
 4. **Buy List**: Filtered recommendations by strategy
 
 ## 🔧 Recent Major Improvements
+
+### 🔄 July 2026 Modernization & Feature Release
+- **yahooquery → yfinance migration**: the abandoned `yahooquery` dependency
+  (broken by Yahoo's auth changes) was replaced with actively-maintained
+  `yfinance` 1.x behind a new unified `market_data.py` access layer
+- **Backtesting engine** (`backtesting/`): walk-forward, point-in-time scoring
+  with no lookahead; win rate, Sharpe, drawdown and SPY-relative metrics
+- **ML weight optimization** (`optimization/`): learns dip-score component
+  weights from backtest trades (rank IC + top-quartile return objective)
+- **Alerts** (`alerts.py`): email (SMTP), SMS (Twilio) and Discord/Slack
+  webhook notifications with cooldown-based deduplication
+- **Portfolio & position sizing** (`portfolio.py`): cost-basis tracking,
+  realized/unrealized P&L, ATR-based risk sizing with conviction scaling
+- **Advanced charting**: new `/api/stock/<t>/chart` endpoint + React
+  `AdvancedChart` with SMA 20/50/200, Bollinger Bands, RSI and MACD panels
+- **Sector rotation** (`analysis/sector_rotation.py`): 11 GICS sector ETFs
+  ranked by relative strength vs SPY, feeding the Risk Modifiers layer
+- **News sentiment** (`collectors/news_sentiment.py`): Finnhub headlines
+  scored with a financial lexicon, feeding the Risk Modifiers layer
+- **Options signals** (`collectors/options_data.py`): put/call ratios, ATM IV,
+  IV skew and max pain
+- **Frontend restored & upgraded**: missing `package.json`/tsconfigs
+  recreated; React 19, Vite 6, TypeScript 5.8, Recharts 3, Tailwind 3.4
+- **Test suite** (`tests/`): 28 offline unit tests covering the new modules
 
 ### 📊 Enhanced Data Coverage
 - **234 stocks** now available for testing (vs. 4 previously)
@@ -244,7 +331,7 @@ python cli.py --fresh --top 50
 - **Fixed testing issues** where same 4 stocks appeared repeatedly
 
 ### 🎯 Scoring System Overhaul
-- **4-layer methodology** replaces simple scoring
+- **5-layer methodology** replaces simple scoring
 - **Configurable parameters** with preset strategies
 - **Real-time testing** against actual market data
 - **Enhanced vs basic data** handling for full coverage
@@ -302,25 +389,23 @@ python cli.py --fresh --top 50
 - **Cache integrity** checks and automatic recovery
 - **Error logging** with detailed troubleshooting info
 
-## 💡 Future Roadmap
+## 💡 Roadmap
 
-### Short Term
-- [ ] Backtesting engine with historical performance
-- [ ] Email/SMS alerts for perfect buy conditions
-- [ ] Portfolio integration and position sizing
-- [ ] Advanced charting with technical overlays
+### Short Term ✅ COMPLETE (July 2026)
+- [x] Backtesting engine with historical performance (`--backtest`)
+- [x] Email/SMS/webhook alerts for perfect buy conditions (`--check-alerts`)
+- [x] Portfolio integration and position sizing (`--portfolio`, `--position-size`)
+- [x] Advanced charting with technical overlays (SMA/Bollinger/RSI/MACD)
 
-### Medium Term  
-- [ ] Machine learning score optimization
-- [ ] News sentiment integration
-- [ ] Sector rotation analysis
-- [ ] Options chain integration
+### Medium Term ✅ COMPLETE (July 2026)
+- [x] Machine learning score optimization (`--optimize-weights`)
+- [x] News sentiment integration (`--news`, feeds risk modifiers)
+- [x] Sector rotation analysis (`--sectors`, feeds risk modifiers)
+- [x] Options chain integration (`--options`)
 
-### Long Term
-- [ ] Multi-asset support (crypto, forex, commodities)
-- [ ] Social trading features
-- [ ] Mobile application
-- [ ] Professional API for institutions
+*The former long-term goals (multi-asset support, social trading, mobile app,
+institutional API) have been dropped to keep the project focused on doing one
+thing well: systematic US-equity dip hunting.*
 
 ## 📈 Performance Stats
 
@@ -328,7 +413,7 @@ python cli.py --fresh --top 50
 - **234 stocks** with full fundamental data
 - **95% API call reduction** through smart caching
 - **<0.5s** average response time for web interface
-- **4-layer scoring** with 15+ technical indicators
+- **5-layer scoring** with 15+ technical indicators
 - **10 strategic presets** for different market conditions
 
 ## 🧙 Author

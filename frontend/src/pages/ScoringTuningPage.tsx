@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,6 +7,7 @@ interface ScoringParameters {
   quality_gate_weight: number;
   dip_signal_weight: number;
   reversal_spark_weight: number;
+  stabilization_weight: number;
   risk_adjustment_weight: number;
   
   // Quality Gate Thresholds  
@@ -47,6 +49,7 @@ interface TestResult {
     quality_gate: number;
     dip_signal: number;
     reversal_spark: number;
+    stabilization?: number;
     risk_adjustment: number;
   };
   issues: string[];
@@ -85,10 +88,11 @@ type SortDirection = 'asc' | 'desc';
 const ScoringTuningPage: React.FC = () => {
   const navigate = useNavigate();
   const [parameters, setParameters] = useState<ScoringParameters>({
-    // Current default weights
-    quality_gate_weight: 35,
-    dip_signal_weight: 45,
+    // Current default weights (5-layer methodology, July 2026)
+    quality_gate_weight: 30,
+    dip_signal_weight: 40,
     reversal_spark_weight: 15,
+    stabilization_weight: 15,
     risk_adjustment_weight: 10,
     
     // Quality Gate defaults
@@ -139,7 +143,7 @@ const ScoringTuningPage: React.FC = () => {
 
   const loadStockData = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/stocks');
+      const response = await fetch(`${API_BASE}/api/stocks`);
       const stocks = await response.json();
       setCurrentStocks(stocks || []);
     } catch (error) {
@@ -149,7 +153,7 @@ const ScoringTuningPage: React.FC = () => {
 
   const loadParameters = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/scoring/load-parameters');
+      const response = await fetch(`${API_BASE}/api/scoring/load-parameters`);
       if (response.ok) {
         const params = await response.json();
         setParameters(prev => ({ ...prev, ...params }));
@@ -168,7 +172,7 @@ const ScoringTuningPage: React.FC = () => {
   const testNewScoring = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:5001/api/scoring/test-parameters', {
+      const response = await fetch(`${API_BASE}/api/scoring/test-parameters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -247,15 +251,18 @@ const ScoringTuningPage: React.FC = () => {
     const oldScore = stock.score || 0;
     
     // Simulate new scores based on new parameters
+    const currentWeights = stock.score_details?.layer_weights || {};
     const newLayerScores = {
-      quality_gate: (currentLayerScores.quality_gate || 0) * (parameters.quality_gate_weight / 35),
-      dip_signal: (currentLayerScores.dip_signal || 0) * (parameters.dip_signal_weight / 45),
-      reversal_spark: (currentLayerScores.reversal_spark || 0) * (parameters.reversal_spark_weight / 15),
+      quality_gate: (currentLayerScores.quality_gate || 0) * (parameters.quality_gate_weight / (currentWeights.quality_gate || 30)),
+      dip_signal: (currentLayerScores.dip_signal || 0) * (parameters.dip_signal_weight / (currentWeights.dip_signal || 40)),
+      reversal_spark: (currentLayerScores.reversal_spark || 0) * (parameters.reversal_spark_weight / (currentWeights.reversal_spark || 15)),
+      stabilization: (currentLayerScores.stabilization || 0) * (parameters.stabilization_weight / (currentWeights.stabilization || 15)),
       risk_adjustment: currentLayerScores.risk_adjustment || 0
     };
-    
-    const newScore = newLayerScores.quality_gate + newLayerScores.dip_signal + 
-                    newLayerScores.reversal_spark + newLayerScores.risk_adjustment;
+
+    const newScore = newLayerScores.quality_gate + newLayerScores.dip_signal +
+                    newLayerScores.reversal_spark + newLayerScores.stabilization +
+                    newLayerScores.risk_adjustment;
 
     // Determine recommendations
     const oldRecommendation = getRecommendation(oldScore, 'old');
@@ -296,7 +303,7 @@ const ScoringTuningPage: React.FC = () => {
 
   const saveParameters = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/scoring/save-parameters', {
+      const response = await fetch(`${API_BASE}/api/scoring/save-parameters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parameters)
@@ -316,10 +323,11 @@ const ScoringTuningPage: React.FC = () => {
   const resetToDefaults = () => {
     const defaultParams: ScoringParameters = {
       // Layer weights
-      quality_gate_weight: 35,
-      dip_signal_weight: 45,
+      quality_gate_weight: 30,
+      dip_signal_weight: 40,
       reversal_spark_weight: 15,
-      risk_adjustment_weight: 5,
+      stabilization_weight: 15,
+      risk_adjustment_weight: 10,
       
       // Quality Gate
       quality_fcf_threshold: 0,
@@ -359,6 +367,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 25,
         dip_signal_weight: 55,
         reversal_spark_weight: 15,
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -389,6 +398,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 50,  // Heavy quality focus
         dip_signal_weight: 35,
         reversal_spark_weight: 10,
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -419,6 +429,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 15,  // Minimal quality filter
         dip_signal_weight: 60,  // Focus on dip timing
         reversal_spark_weight: 20,  // Strong reversal signals needed
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -449,6 +460,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 30,
         dip_signal_weight: 40,
         reversal_spark_weight: 25,  // High reversal weight
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -479,6 +491,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 35,
         dip_signal_weight: 45,
         reversal_spark_weight: 15,
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -509,6 +522,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 40,  // Quality matters in crashes
         dip_signal_weight: 50,
         reversal_spark_weight: 8,   // Less focus on immediate reversal
+        stabilization_weight: 15,
         risk_adjustment_weight: 2,   // Ignore market risk in crashes
         
         quality_fcf_threshold: 0,
@@ -539,6 +553,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 40,  // Quality focus for tech
         dip_signal_weight: 45,
         reversal_spark_weight: 12,
+        stabilization_weight: 15,
         risk_adjustment_weight: 3,
         
         quality_fcf_threshold: 0,
@@ -569,6 +584,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 45,  // Quality is key
         dip_signal_weight: 35,
         reversal_spark_weight: 15,
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -599,6 +615,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 20,  // Flexible quality for recovery
         dip_signal_weight: 55,  // Focus on dip timing
         reversal_spark_weight: 20,  // Strong reversal needed
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -629,6 +646,7 @@ const ScoringTuningPage: React.FC = () => {
         quality_gate_weight: 55,  // Heavy quality focus
         dip_signal_weight: 30,
         reversal_spark_weight: 10,
+        stabilization_weight: 15,
         risk_adjustment_weight: 5,
         
         quality_fcf_threshold: 0,
@@ -882,6 +900,7 @@ const ScoringTuningPage: React.FC = () => {
                 { key: 'quality_gate_weight', label: 'Quality Gate', description: 'Filters out fundamentally weak companies' },
                 { key: 'dip_signal_weight', label: 'Dip Signal', description: 'Identifies stocks at good discount levels' },
                 { key: 'reversal_spark_weight', label: 'Reversal Spark', description: 'Detects potential upward momentum' },
+                { key: 'stabilization_weight', label: 'Stabilization', description: 'Falling-knife filter: has the price formed a base?' },
                 { key: 'risk_adjustment_weight', label: 'Risk Adjustment', description: 'Reduces scores for high-risk stocks' },
               ].map(({ key, label, description }) => (
                 <div key={key}>

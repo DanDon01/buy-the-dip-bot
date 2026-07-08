@@ -6,7 +6,6 @@ import math
 from datetime import datetime
 import pandas as pd
 from utils import load_scores
-from yahooquery import Ticker
 import subprocess
 import sys
 from scoring.composite_scorer import CompositeScorer
@@ -239,6 +238,17 @@ def get_stock_detail(ticker):
     elif 'price' not in stock_record:
         stock_record['price'] = 0 # Fallback to 0 if no price info is found
 
+    # Hoist scoring layer data to the top level for the frontend components
+    # (LayeredRadarChart / LayerBreakdown read stock.layer_scores directly).
+    score_details = stock_record.get('score_details') or {}
+    layered = score_details.get('layered_details') or {}
+    for key in ('layer_scores', 'layer_weights', 'data_confidence'):
+        if key not in stock_record and layered.get(key) is not None:
+            stock_record[key] = layered[key]
+    layer_details = layered.get('layer_details') or {}
+    if 'stabilization_details' not in stock_record and layer_details.get('stabilization'):
+        stock_record['stabilization_details'] = layer_details['stabilization']
+
     # Ensure volume_analysis object exists to prevent frontend errors
     if 'volume_analysis' not in stock_record or not stock_record['volume_analysis']:
         stock_record['volume_analysis'] = {
@@ -441,9 +451,10 @@ def load_scoring_parameters():
         else:
             # Return default parameters
             default_params = {
-                'quality_gate_weight': 35,
-                'dip_signal_weight': 45,
+                'quality_gate_weight': 30,
+                'dip_signal_weight': 40,
                 'reversal_spark_weight': 15,
+                'stabilization_weight': 15,
                 'risk_adjustment_weight': 10,
                 'quality_fcf_threshold': 0,
                 'quality_pe_multiplier': 1.2,
@@ -532,69 +543,6 @@ def test_scoring_parameters():
         print(f"❌ Error testing scoring parameters: {e}")
         return jsonify({'error': f'Failed to test parameters: {e}'}), 500
 
-def simulate_new_scoring(stock_record, parameters):
-    """Simulate new scoring for a stock record with new parameters."""
-    try:
-        old_score = stock_record.get('score', 0)
-        
-        # Get current layer scores
-        layer_scores = stock_record.get('score_details', {}).get('layer_scores', {})
-        
-        # Calculate new weighted scores
-        new_quality_score = (layer_scores.get('quality_gate', 0) / 35) * parameters.get('quality_gate_weight', 35)
-        new_dip_score = (layer_scores.get('dip_signal', 0) / 45) * parameters.get('dip_signal_weight', 45)
-        new_reversal_score = (layer_scores.get('reversal_spark', 0) / 15) * parameters.get('reversal_spark_weight', 15)
-        new_risk_adjustment = layer_scores.get('risk_adjustment', 0)
-        
-        new_score = new_quality_score + new_dip_score + new_reversal_score + new_risk_adjustment
-        
-        # Determine recommendations
-        old_recommendation = get_recommendation_from_score(old_score, 'old')
-        new_recommendation = get_recommendation_from_score(new_score, 'new', parameters)
-        
-        # Check for data issues
-        data_issues = []
-        layer_details = stock_record.get('score_details', {}).get('layer_details', {})
-        
-        if not layer_details.get('quality_gate'):
-            data_issues.append('missing_quality_gate')
-        if not layer_details.get('dip_signal'):
-            data_issues.append('missing_dip_signal')
-        if not layer_details.get('reversal_spark'):
-            data_issues.append('missing_reversal_spark')
-        
-        return {
-            'ticker': stock_record.get('ticker'),
-            'old_score': old_score,
-            'new_score': new_score,
-            'score_change': new_score - old_score,
-            'old_recommendation': old_recommendation,
-            'new_recommendation': new_recommendation,
-            'recommendation_changed': old_recommendation != new_recommendation,
-            'layer_scores': {
-                'quality_gate': new_quality_score,
-                'dip_signal': new_dip_score,
-                'reversal_spark': new_reversal_score,
-                'risk_adjustment': new_risk_adjustment
-            },
-            'data_issues': len(data_issues) > 0,
-            'issues': data_issues
-        }
-        
-    except Exception as e:
-        return {
-            'ticker': stock_record.get('ticker', 'UNKNOWN'),
-            'error': str(e),
-            'old_score': 0,
-            'new_score': 0,
-            'score_change': 0,
-            'old_recommendation': 'ERROR',
-            'new_recommendation': 'ERROR',
-            'recommendation_changed': False,
-            'data_issues': True,
-            'issues': ['calculation_error']
-        }
-
 def simulate_new_scoring_with_real_data(stock_record, parameters):
     """Simulate new scoring for a stock record using real fundamental data."""
     try:
@@ -611,16 +559,20 @@ def simulate_new_scoring_with_real_data(stock_record, parameters):
         new_quality_score = 0
         new_dip_score = 0
         new_reversal_score = 0
+        new_stabilization_score = 0
         new_risk_adjustment = 0
         
         data_issues = []
         calculation_details = {}
         
         if has_enhanced_data and layer_scores:
-            # Use existing layer scores and reweight them
-            new_quality_score = (layer_scores.get('quality_gate', 0) / 35) * parameters.get('quality_gate_weight', 35)
-            new_dip_score = (layer_scores.get('dip_signal', 0) / 45) * parameters.get('dip_signal_weight', 45)
-            new_reversal_score = (layer_scores.get('reversal_spark', 0) / 15) * parameters.get('reversal_spark_weight', 15)
+            # Use existing layer scores and reweight them (denominators =
+            # weights the scores were produced with, defaulting to current)
+            layer_weights = layered_details.get('layer_weights', {})
+            new_quality_score = (layer_scores.get('quality_gate', 0) / layer_weights.get('quality_gate', 30)) * parameters.get('quality_gate_weight', 30)
+            new_dip_score = (layer_scores.get('dip_signal', 0) / layer_weights.get('dip_signal', 40)) * parameters.get('dip_signal_weight', 40)
+            new_reversal_score = (layer_scores.get('reversal_spark', 0) / layer_weights.get('reversal_spark', 15)) * parameters.get('reversal_spark_weight', 15)
+            new_stabilization_score = (layer_scores.get('stabilization', 0) / layer_weights.get('stabilization', 15)) * parameters.get('stabilization_weight', 15)
             new_risk_adjustment = layer_scores.get('risk_adjustment', 0)
             calculation_details['method'] = 'enhanced_reweight'
         else:
@@ -756,8 +708,9 @@ def simulate_new_scoring_with_real_data(stock_record, parameters):
             
             new_risk_adjustment = risk_adjustment
         
-        new_score = new_quality_score + new_dip_score + new_reversal_score + new_risk_adjustment
-        
+        new_score = (new_quality_score + new_dip_score + new_reversal_score
+                     + new_stabilization_score + new_risk_adjustment)
+
         # Determine recommendations
         old_recommendation = get_recommendation_from_score(old_score, 'old')
         new_recommendation = get_recommendation_from_score(new_score, 'new', parameters)
@@ -775,6 +728,7 @@ def simulate_new_scoring_with_real_data(stock_record, parameters):
                 'quality_gate': _to_native_py_type(new_quality_score),
                 'dip_signal': _to_native_py_type(new_dip_score),
                 'reversal_spark': _to_native_py_type(new_reversal_score),
+                'stabilization': _to_native_py_type(new_stabilization_score),
                 'risk_adjustment': _to_native_py_type(new_risk_adjustment)
             },
             'data_issues': len(data_issues) > 0,
@@ -835,5 +789,146 @@ def get_recommendation_from_score(score, type_='new', parameters=None):
     else:
         return 'AVOID'
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# 📈 ADVANCED CHARTING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/stock/<ticker>/chart')
+def get_stock_chart(ticker):
+    """Chart-ready price series with SMA/Bollinger/RSI/MACD overlays."""
+    try:
+        from charting import get_chart_data
+        period = request.args.get('period', '6mo')
+        payload = get_chart_data(ticker, period)
+        if payload is None:
+            return jsonify({'error': f'No chart data available for {ticker}'}), 404
+        return jsonify(clean_data_for_json(payload))
+    except Exception as e:
+        print(f"❌ Error building chart for {ticker}: {e}")
+        return jsonify({'error': f'Chart data unavailable: {e}'}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 💼 PORTFOLIO & POSITION SIZING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/portfolio')
+def get_portfolio():
+    """Current holdings, P&L, and settings."""
+    try:
+        from portfolio import Portfolio
+        return jsonify(clean_data_for_json(Portfolio().summary()))
+    except Exception as e:
+        return jsonify({'error': f'Portfolio unavailable: {e}'}), 500
+
+
+@app.route('/api/portfolio/position', methods=['POST'])
+def add_portfolio_position():
+    """Record a buy: {ticker, shares, price, note?}."""
+    try:
+        from portfolio import Portfolio
+        body = request.json or {}
+        pos = Portfolio().add_position(
+            body['ticker'], float(body['shares']), float(body['price']),
+            note=body.get('note', ''))
+        return jsonify(clean_data_for_json(pos)), 201
+    except (KeyError, ValueError, TypeError) as e:
+        return jsonify({'error': f'Invalid position: {e}'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolio/sell', methods=['POST'])
+def sell_portfolio_position():
+    """Record a sell: {ticker, shares?, price}. Omit shares to close fully."""
+    try:
+        from portfolio import Portfolio
+        body = request.json or {}
+        shares = float(body['shares']) if body.get('shares') is not None else None
+        trade = Portfolio().sell_position(body['ticker'], shares, float(body['price']))
+        return jsonify(clean_data_for_json(trade))
+    except KeyError as e:
+        return jsonify({'error': f'Missing/unknown: {e}'}), 400
+    except (ValueError, TypeError) as e:
+        return jsonify({'error': f'Invalid sale: {e}'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolio/position-size/<ticker>')
+def get_position_size(ticker):
+    """Risk-based position sizing suggestion for a ticker."""
+    try:
+        from portfolio import position_size_for_ticker
+        return jsonify(clean_data_for_json(position_size_for_ticker(ticker)))
+    except KeyError as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🔄 SECTOR ROTATION / NEWS SENTIMENT / OPTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/sectors')
+def get_sectors():
+    """Sector rotation rankings (cached; ?refresh=1 forces an API refresh)."""
+    try:
+        from analysis.sector_rotation import load_sector_rotation
+        refresh = request.args.get('refresh') == '1'
+        data = load_sector_rotation(refresh_if_stale=refresh)
+        if data is None:
+            return jsonify({'error': 'No sector data cached. '
+                                     'Run: python cli.py --sectors'}), 404
+        return jsonify(clean_data_for_json(data))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stock/<ticker>/news')
+def get_stock_news(ticker):
+    """News sentiment summary (Finnhub headlines + lexicon scoring)."""
+    try:
+        from collectors.news_sentiment import NewsSentimentCollector
+        return jsonify(clean_data_for_json(
+            NewsSentimentCollector().get_sentiment(ticker)))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stock/<ticker>/options')
+def get_stock_options(ticker):
+    """Options chain signals: put/call ratio, IV, skew, max pain."""
+    try:
+        from collectors.options_data import OptionsDataCollector
+        return jsonify(clean_data_for_json(
+            OptionsDataCollector().get_options_summary(ticker)))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🧪 BACKTESTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/backtests')
+def list_backtests():
+    """Summaries of saved backtest runs (newest first)."""
+    import glob as _glob
+    reports = []
+    for path in sorted(_glob.glob(os.path.join('output', 'backtests', 'backtest_*.json')),
+                       reverse=True)[:20]:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            reports.append({'file': os.path.basename(path),
+                            'generated': data.get('generated'),
+                            'summary': data.get('summary', {})})
+        except (json.JSONDecodeError, OSError):
+            continue
+    return jsonify(clean_data_for_json(reports))
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)  # Running on a different port (5001) to avoid conflicts with React dev server 
+    app.run(debug=os.getenv('FLASK_DEBUG') == '1', port=5001)  # Running on a different port (5001) to avoid conflicts with React dev server 
